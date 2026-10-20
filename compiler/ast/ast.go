@@ -61,7 +61,7 @@ func (d *FnDecl) String() string {
 	for i, p := range d.Params {
 		params[i] = p.Name
 	}
-	return fmt.Sprintf("(fn %s (%s) %s)", d.Name.Name, strings.Join(params, " "), d.Body)
+	return fmt.Sprintf("(function %s (%s) %s)", d.Name.Name, strings.Join(params, " "), d.Body)
 }
 
 // ---------------------------------------------------------------------------
@@ -97,8 +97,9 @@ func (s *LetStmt) declNode()      {}
 func (s *LetStmt) String() string { return fmt.Sprintf("(let %s %s)", s.Name.Name, s.Value) }
 
 // AssignStmt couvre '=' et les affectations composées ('+=', ...).
+// Target est un *Ident (variable) ou un *FieldExpr (this.champ).
 type AssignStmt struct {
-	Target *Ident
+	Target Expr
 	Op     token.Kind // ASSIGN, ADD_ASSIGN, ...
 	Value  Expr
 }
@@ -106,7 +107,7 @@ type AssignStmt struct {
 func (s *AssignStmt) Pos() token.Pos { return s.Target.Pos() }
 func (s *AssignStmt) stmtNode()      {}
 func (s *AssignStmt) String() string {
-	return fmt.Sprintf("(%s %s %s)", s.Op, s.Target.Name, s.Value)
+	return fmt.Sprintf("(%s %s %s)", s.Op, s.Target, s.Value)
 }
 
 type ExprStmt struct {
@@ -246,5 +247,159 @@ func (e *CallExpr) String() string {
 		b.WriteString(a.String())
 	}
 	b.WriteByte(')')
+	return b.String()
+}
+
+// ---------------------------------------------------------------------------
+// Classes (cf. docs/classes.md)
+
+// ClassDecl est une déclaration de classe.
+type ClassDecl struct {
+	ClassPos token.Pos
+	Abstract bool
+	Name     *Ident
+	Parent   *Ident // nil sans « extends »
+	Fields   []*FieldDecl
+	Ctor     *MethodDecl // nil si pas de constructeur
+	Methods  []*MethodDecl
+}
+
+func (d *ClassDecl) Pos() token.Pos { return d.ClassPos }
+func (d *ClassDecl) declNode()      {}
+func (d *ClassDecl) String() string {
+	var b strings.Builder
+	if d.Abstract {
+		b.WriteString("(abstract class ")
+	} else {
+		b.WriteString("(class ")
+	}
+	b.WriteString(d.Name.Name)
+	if d.Parent != nil {
+		b.WriteString(" extends " + d.Parent.Name)
+	}
+	for _, f := range d.Fields {
+		b.WriteString(" " + f.String())
+	}
+	if d.Ctor != nil {
+		b.WriteString(" " + d.Ctor.String())
+	}
+	for _, m := range d.Methods {
+		b.WriteString(" " + m.String())
+	}
+	b.WriteByte(')')
+	return b.String()
+}
+
+// FieldDecl est un champ : « let nom = valeur » (Value nil = 0).
+type FieldDecl struct {
+	LetPos token.Pos
+	Name   *Ident
+	Value  Expr
+}
+
+func (f *FieldDecl) Pos() token.Pos { return f.LetPos }
+func (f *FieldDecl) String() string {
+	if f.Value == nil {
+		return "(field " + f.Name.Name + ")"
+	}
+	return fmt.Sprintf("(field %s %s)", f.Name.Name, f.Value)
+}
+
+// MethodDecl est une méthode ou le constructeur (Name.Name == "constructor").
+// Body est nil pour une méthode abstraite.
+type MethodDecl struct {
+	FnPos    token.Pos
+	Abstract bool
+	Name     *Ident
+	Params   []*Ident
+	Body     *Block
+}
+
+func (m *MethodDecl) Pos() token.Pos { return m.FnPos }
+func (m *MethodDecl) String() string {
+	params := make([]string, len(m.Params))
+	for i, p := range m.Params {
+		params[i] = p.Name
+	}
+	kind := "method"
+	if m.Abstract {
+		kind = "abstract"
+	}
+	if m.Body == nil {
+		return fmt.Sprintf("(%s %s (%s))", kind, m.Name.Name, strings.Join(params, " "))
+	}
+	return fmt.Sprintf("(%s %s (%s) %s)", kind, m.Name.Name, strings.Join(params, " "), m.Body)
+}
+
+// ThisExpr est « this ».
+type ThisExpr struct{ ThisPos token.Pos }
+
+func (e *ThisExpr) Pos() token.Pos { return e.ThisPos }
+func (e *ThisExpr) exprNode()      {}
+func (e *ThisExpr) String() string { return "this" }
+
+// FieldExpr est « this.champ ».
+type FieldExpr struct {
+	ThisPos token.Pos
+	Name    *Ident
+}
+
+func (e *FieldExpr) Pos() token.Pos { return e.ThisPos }
+func (e *FieldExpr) exprNode()      {}
+func (e *FieldExpr) String() string { return "this." + e.Name.Name }
+
+// NewExpr est « new Classe(args) ».
+type NewExpr struct {
+	NewPos token.Pos
+	Class  *Ident
+	Args   []Expr
+}
+
+func (e *NewExpr) Pos() token.Pos { return e.NewPos }
+func (e *NewExpr) exprNode()      {}
+func (e *NewExpr) String() string { return "(new " + e.Class.Name + argString(e.Args) + ")" }
+
+// MethodCall est « objet.methode(args) ».
+type MethodCall struct {
+	Recv Expr
+	Name *Ident
+	Args []Expr
+}
+
+func (e *MethodCall) Pos() token.Pos { return e.Recv.Pos() }
+func (e *MethodCall) exprNode()      {}
+func (e *MethodCall) String() string {
+	return fmt.Sprintf("(callm %s %s%s)", e.Recv, e.Name.Name, argString(e.Args))
+}
+
+// SuperCall est « super(args) » (constructeur de la classe parente).
+type SuperCall struct {
+	SuperPos token.Pos
+	Args     []Expr
+}
+
+func (e *SuperCall) Pos() token.Pos { return e.SuperPos }
+func (e *SuperCall) exprNode()      {}
+func (e *SuperCall) String() string { return "(super" + argString(e.Args) + ")" }
+
+// SuperMethodCall est « super.methode(args) ».
+type SuperMethodCall struct {
+	SuperPos token.Pos
+	Name     *Ident
+	Args     []Expr
+}
+
+func (e *SuperMethodCall) Pos() token.Pos { return e.SuperPos }
+func (e *SuperMethodCall) exprNode()      {}
+func (e *SuperMethodCall) String() string {
+	return "(super." + e.Name.Name + argString(e.Args) + ")"
+}
+
+func argString(args []Expr) string {
+	var b strings.Builder
+	for _, a := range args {
+		b.WriteByte(' ')
+		b.WriteString(a.String())
+	}
 	return b.String()
 }

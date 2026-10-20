@@ -1,6 +1,9 @@
-# Spécification de Chili — v0
+# Spécification de Chili — v1
 
 Langage généraliste minimal, syntaxe à accolades. Cible : VM bytecode sur microcontrôleur.
+
+Les classes (`class`, `extends`, `abstract`, `new`, `this`, `super`) sont décrites dans
+[classes.md](classes.md). Nécessite le bytecode v2 et le firmware 0.2.0.
 
 ## 1. Exemple
 
@@ -8,13 +11,15 @@ Langage généraliste minimal, syntaxe à accolades. Cible : VM bytecode sur mic
 // blink.chl
 let led_pin = 2
 
-fn main() {
-    gpio.mode(led_pin, 1)
-    while true {
-        gpio.write(led_pin, 1)
-        delay(500)
-        gpio.write(led_pin, 0)
-        delay(500)
+class Main {
+    function main() {
+        gpio.mode(led_pin, 1)
+        while true {
+            gpio.write(led_pin, 1)
+            delay(500)
+            gpio.write(led_pin, 0)
+            delay(500)
+        }
     }
 }
 ```
@@ -25,7 +30,9 @@ fn main() {
 - Commentaires : `// jusqu'à la fin de la ligne`.
 - Identifiants : `[A-Za-z_][A-Za-z0-9_]*`.
 - Entiers : décimal `42`, hexadécimal `0x2A`, binaire `0b101010`. `_` autorisé comme séparateur (`1_000_000`).
-- Mots-clés : `fn let if else while return break continue true false`.
+- Mots-clés : `function let if else while return break continue true false`
+  et, pour les classes, `class abstract extends constructor this super new`.
+  `fn` (ancienne syntaxe) est refusé : « 'fn' n'existe plus : écris 'function' ».
 - Opérateurs : `+ - * / % & | ^ ~ << >> ! && || == != < <= > >= = += -= *= /= %= .`
 - Délimiteurs : `( ) { } ,  ;`
 
@@ -39,7 +46,8 @@ Conséquence : l'accolade ouvrante doit être sur la même ligne (`if x {`, pas 
 
 ## 3. Types
 
-v0 : un seul type, l'**entier signé 32 bits** (`int`). Les booléens sont des entiers :
+Une seule sorte de valeur : l'**entier signé 32 bits** (`int`). Un objet (voir classes.md) est
+représenté par un entier qui le désigne (*handle*) ; `0` sert de « pas d'objet ». Les booléens sont des entiers :
 `false` = 0, `true` = 1, toute valeur non nulle est vraie. Débordement : arithmétique modulo 2³².
 Division par zéro : erreur d'exécution (la VM arrête le programme).
 
@@ -49,8 +57,8 @@ Prévu plus tard : chaînes, tableaux fixes, flottants.
 
 ```ebnf
 program     = { topDecl ";" } ;
-topDecl     = fnDecl | letStmt ;
-fnDecl      = "fn" IDENT "(" [ params ] ")" block ;
+topDecl     = classDecl | funcDecl | letStmt ;  (* classDecl : voir classes.md *)
+funcDecl    = "function" IDENT "(" [ params ] ")" block ;
 params      = IDENT { "," IDENT } ;
 
 block       = "{" { statement ";" } "}" ;
@@ -60,15 +68,18 @@ letStmt     = "let" IDENT "=" expr ;
 ifStmt      = "if" expr block [ "else" ( ifStmt | block ) ] ;
 whileStmt   = "while" expr block ;
 returnStmt  = "return" [ expr ] ;
-simpleStmt  = expr [ assignOp expr ] ;          (* l'expression de gauche doit être un IDENT *)
+simpleStmt  = expr [ assignOp expr ] ;          (* à gauche : un IDENT ou this.champ *)
 assignOp    = "=" | "+=" | "-=" | "*=" | "/=" | "%=" ;
 
 expr        = binary ;                          (* voir la table de précédence *)
 unary       = ( "-" | "!" | "~" ) unary | postfix ;
-postfix     = primary [ "(" [ args ] ")" ] ;
+postfix     = primary { "." IDENT [ "(" [ args ] ")" ] | "(" [ args ] ")" } ;
 args        = expr { "," expr } ;
-primary     = INT | "true" | "false" | name | "(" expr ")" ;
-name        = IDENT [ "." IDENT ] ;             (* "gpio.write" : nom qualifié de native *)
+primary     = INT | "true" | "false" | IDENT | "this" | "super"
+            | "new" IDENT "(" [ args ] ")" | "(" expr ")" ;
+                                                (* "gpio.write(…)" : native qualifiée ;
+                                                   "obj.m(…)" : appel de méthode ;
+                                                   "this.x" : champ — voir classes.md *)
 ```
 
 ### Précédence (de la plus faible à la plus forte)
@@ -91,25 +102,28 @@ name        = IDENT [ "." IDENT ] ;             (* "gpio.write" : nom qualifié 
 
 ## 5. Sémantique
 
-- Un programme est une suite de fonctions et de variables globales. Il doit définir `fn main()`.
-- Les globales sont initialisées dans l'ordre du fichier, avant l'appel à `main`.
+- Un programme est une suite de classes, de fonctions et de variables globales. Il doit définir
+  `class Main` avec une méthode `main()` sans paramètre.
+- Au démarrage : les globales sont initialisées dans l'ordre du fichier, puis la VM crée un objet
+  `new Main()` et appelle sa méthode `main()`.
 - `let` déclare une variable dans le bloc courant. Redéclarer un nom dans le même bloc est une erreur ;
   le masquage dans un bloc imbriqué est autorisé. Les paramètres font partie du bloc du corps :
-  `fn f(a) { let a = 1 }` est une redéclaration.
+  `function f(a) { let a = 1 }` est une redéclaration.
 - `let x = x + 1` : l'initialiseur est évalué avant la déclaration, il lit donc le `x` englobant.
 - Les fonctions renvoient toujours un entier (0 si pas de `return` ou `return` sans valeur).
 - Les fonctions peuvent être appelées avant leur définition dans le fichier. Récursion autorisée.
+- Les fonctions et les classes se déclarent uniquement au niveau global.
 - Les noms qualifiés (`gpio.write`) désignent exclusivement des fonctions natives fournies par la VM.
   Les natives sans préfixe (`delay`, `print`) sont aussi possibles.
 
-## 6. Fonctions natives (v0, provisoire)
+## 6. Fonctions natives
 
 | Nom              | Args           | Effet                                  |
 |------------------|----------------|----------------------------------------|
 | `print(v)`       | 1              | Affiche un entier (série / stdout)     |
 | `delay(ms)`      | 1              | Pause en millisecondes                 |
 | `millis()`       | 0              | Millisecondes depuis le démarrage      |
-| `gpio.mode(p,m)` | 2              | 0 = entrée, 1 = sortie, 2 = pull-up    |
+| `gpio.mode(p,m)` | 2              | 0 = entrée, 1 = sortie, 2 = pull-up, 3 = pull-down |
 | `gpio.write(p,v)`| 2              | Écrit 0/1 sur une broche               |
 | `gpio.read(p)`   | 1              | Lit une broche                         |
 | `random(min,max)`| 2              | Entier aléatoire dans [min, max], bornes incluses (générateur matériel sur ESP32) |
@@ -123,4 +137,4 @@ déclarer de variable ou de fonction portant ces noms.
 
 ## 7. Bytecode
 
-Format figé dans [bytecode.md](bytecode.md) (version 1).
+Format figé dans [bytecode.md](bytecode.md) (version 2).

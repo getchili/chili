@@ -67,7 +67,7 @@ chili build blink.chl
 ```
 
 ```
-blink.chl → blink.chlb (111 octets)
+blink.chl → blink.chlb (188 octets)
 ```
 
 Choisir le nom du fichier produit : `chili build blink.chl -o clignote.chlb`.
@@ -81,9 +81,12 @@ chili dis blink.chl
 ```
 
 ```
-; 2 globale(s), 2 fonction(s), entrée = <init>, 75 octets de code
+; 2 globale(s), 3 fonction(s), 1 classe(s), entrée = <init>, 86 octets de code
 
-fn main  ; params=0 locals=0 max_stack=2
+class Main  ; 0 champ(s)
+  main           -> Main.main
+
+function Main.main  ; params=1 locals=1 max_stack=2
   0000  GLOAD       0
   0003  PUSH8       1
   0005  CALL_NATIVE gpio.mode/2
@@ -107,7 +110,7 @@ chili run fib.chl
 3
 ...
 75025
-58
+60
 ```
 
 Avec des broches :
@@ -121,7 +124,7 @@ Avec des broches :
 Une erreur d'exécution arrête le programme :
 
 ```
-erreur d'exécution dans main (pc 0008) : division par zéro
+erreur d'exécution dans Main.main (pc 0008) : division par zéro
 ```
 
 ---
@@ -143,10 +146,10 @@ Ports série :
   COM4     WCH CH340 (1A86:7523)  <- carte ESP32 probable
 
 COM4 :
-  Firmware Chili : 0.1.3 (bytecode v1)
+  Firmware Chili : 0.2.0 (bytecode v2)
   Puce           : ESP32-D0WD-V3, 251 Ko de mémoire libre
   WiFi           : non configuré (chili wifi <réseau> <mot de passe>)
-  Programme      : 111 octets (crc 5e0c1f3a)
+  Programme      : 188 octets (crc 5e0c1f3a)
   État           : en cours d'exécution
 ```
 
@@ -168,7 +171,7 @@ Valeurs possibles de **État** :
 | `en cours d'exécution`                        | le programme tourne                            |
 | `en pause (chili stop), repartira au prochain démarrage` | après `chili stop`                  |
 | `arrêté (chili kill), ne se relance pas au démarrage…`   | après `chili kill`                  |
-| `terminé (le programme est arrivé au bout)`   | `main` s'est terminée normalement (firmware 0.1.3+) |
+| `terminé (le programme est arrivé au bout)`   | `main` s'est terminée normalement                |
 | `arrêté sur une erreur`                       | erreur d'exécution (voir `chili monitor`)      |
 
 Si la carte n'est pas reconnue (puce USB inconnue), force l'examen d'un port : `chili check-port COM4`.
@@ -184,13 +187,13 @@ chili flash
 ```
 
 ```
-Installation du firmware Chili 0.1.3 sur COM4.
+Installation du firmware Chili 0.2.0 sur COM4.
 Ne débranche pas la carte pendant l'opération.
 
   [##############################] 100 %  firmware.bin
 
 Firmware écrit et vérifié en 28 s. Redémarrage de la carte…
-Firmware Chili 0.1.3 opérationnel sur ESP32-D0WD-V3.
+Firmware Chili 0.2.0 opérationnel sur ESP32-D0WD-V3.
 
 Envoie ton premier programme :
   chili push examples\blink.chl COM4
@@ -209,7 +212,7 @@ chili push blink.chl
 ```
 
 ```
-Envoi de blink.chl (111 octets) vers COM4… ok (180 ms)
+Envoi de blink.chl (188 octets) vers COM4… ok (180 ms)
 Programme enregistré sur la carte et lancé. Il redémarrera tout seul à chaque mise sous tension.
 Sortie de la carte — Ctrl+C pour quitter (le programme continue de tourner).
 ```
@@ -242,7 +245,7 @@ Messages de Chili qui peuvent apparaître :
 |--------------------------------------|-------------------------------------------------|
 | `[chili] la carte a redémarré`       | la carte vient de démarrer (bouton EN, coupure) |
 | `[chili] programme terminé`          | `main` s'est terminée normalement               |
-| `[chili] erreur : division par zero (fonction f0, pc 0008)` | erreur d'exécution : le programme s'arrête |
+| `[chili] erreur : division par zero (dans Main.main, pc 0008)` | erreur d'exécution : le programme s'arrête |
 | `[chili] WiFi connecté : ip=192.168.1.42 host=chili-a1b2c3.local` | la carte a rejoint le WiFi |
 
 Par WiFi : `chili monitor 192.168.1.42`.
@@ -330,12 +333,12 @@ chili version
 ```
 
 ```
-chili 0.1.0 (firmware ESP32 embarqué : 0.1.3, bytecode v1)
+chili 0.1.0 (firmware ESP32 embarqué : 0.2.0, bytecode v2)
 ```
 
 - `chili 0.1.0` : version de l'outil ;
-- `firmware ESP32 embarqué : 0.1.3` : version du firmware que `chili flash` installe ;
-- `bytecode v1` : version du format de programme.
+- `firmware ESP32 embarqué : 0.2.0` : version du firmware que `chili flash` installe ;
+- `bytecode v2` : version du format de programme. Un firmware qui ne gère que la v1 (avant 0.2.0) refuse les programmes : mets-le à jour avec `chili flash`.
 
 ### `chili help`
 

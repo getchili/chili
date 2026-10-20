@@ -26,8 +26,8 @@ Champs de `info` :
 
 | Champ      | Valeurs                                                        |
 |------------|----------------------------------------------------------------|
-| `version`  | version du firmware, ex. `0.1.0`                               |
-| `bytecode` | version du format bytecode supportée (`1`)                     |
+| `version`  | version du firmware, ex. `0.2.0`                               |
+| `bytecode` | version du format bytecode supportée (`2` depuis le firmware 0.2.0) |
 | `chip`     | modèle, ex. `ESP32`, `ESP32-S3`                                |
 | `heap`     | mémoire libre en octets                                        |
 | `program`  | `none` ou `<taille>:<id>` du `.chlb` stocké ; `id` = CRC-32 du contenu (les 4 derniers octets du fichier). Le CRC du fichier entier ne sert pas d'identifiant : il vaut toujours `2144df1c`. |

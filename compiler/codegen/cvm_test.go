@@ -50,7 +50,7 @@ func buildCVM(t *testing.T) string {
 // runCVM exécute src avec la VM C et renvoie (stdout, stderr, réussite).
 func runCVM(t *testing.T, exe, src string) (string, string, bool) {
 	t.Helper()
-	prog, err := Compile([]byte(src))
+	prog, err := Compile([]byte(legacy(src)))
 	if err != nil {
 		t.Fatalf("compilation :\n%v", err)
 	}
@@ -87,7 +87,10 @@ func TestCVMRuntimeErrors(t *testing.T) {
 		{"fn main() { let z = 0\n print(1 % z) }", "modulo par zero"},
 		{"fn f(n) { return f(n + 1) }\nfn main() { f(0) }", "trop d'appels imbriques"},
 		{"fn main() { print(random(6, 1)) }", "plus petit que le minimum"},
-	}
+		{"class A { function f() {} }\nclass Main { function main() { let x = 5\n x.f() } }",
+			"appel de f() sur une valeur qui n'est pas un objet"},
+		{"class A { function f() {} }\nclass B { function g() {} }\nclass Main { function main() { let o = new B()\n o.f() } }",
+			"la classe B n'a pas de methode f"}}
 	for _, tt := range tests {
 		_, errOut, ok := runCVM(t, exe, tt.src)
 		if ok || !strings.Contains(errOut, tt.want) {
@@ -98,7 +101,7 @@ func TestCVMRuntimeErrors(t *testing.T) {
 
 func TestCVMRejectsCorruptFile(t *testing.T) {
 	exe := buildCVM(t)
-	prog, err := Compile([]byte("fn main() { print(1) }"))
+	prog, err := Compile([]byte(legacy("fn main() { print(1) }")))
 	if err != nil {
 		t.Fatal(err)
 	}

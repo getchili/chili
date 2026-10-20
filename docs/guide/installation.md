@@ -37,7 +37,7 @@ Chili est installé dans `%LOCALAPPDATA%\Programs\Chili` :
 3. Tu dois voir :
 
    ```
-   chili 0.1.0 (firmware ESP32 embarqué : 0.1.3, bytecode v1)
+   chili 0.1.0 (firmware ESP32 embarqué : 0.2.0, bytecode v2)
    ```
 
 Si tu vois `chili : Le terme «chili» n'est pas reconnu…`, ferme le terminal et ouvre-en un nouveau. Si ça ne suffit pas, relance l'installateur en laissant cochée l'option **Ajouter chili au PATH**.

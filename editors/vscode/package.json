@@ -1,15 +1,21 @@
 {
   "name": "chili-lang",
   "displayName": "Chili",
-  "description": "Coloration syntaxique et icône pour le langage Chili (.chl)",
-  "version": "0.1.0",
+  "description": "Langage Chili (.chl) : coloration, snippets et erreurs de syntaxe soulignées",
+  "version": "0.2.0",
   "publisher": "chili",
   "license": "MIT",
   "engines": {
     "vscode": "^1.75.0"
   },
   "categories": [
-    "Programming Languages"
+    "Programming Languages",
+    "Snippets",
+    "Linters"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [
+    "onLanguage:chili"
   ],
   "contributes": {
     "languages": [
@@ -48,6 +54,27 @@
         "scopeName": "source.chili",
         "path": "./syntaxes/chili.tmLanguage.json"
       }
-    ]
+    ],
+    "snippets": [
+      {
+        "language": "chili",
+        "path": "./snippets/chili.json"
+      }
+    ],
+    "configuration": {
+      "title": "Chili",
+      "properties": {
+        "chili.path": {
+          "type": "string",
+          "default": "",
+          "description": "Chemin de chili.exe. Vide : la commande « chili » du PATH."
+        },
+        "chili.check.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Vérifier le fichier avec « chili check » et souligner les erreurs."
+        }
+      }
+    }
   }
 }

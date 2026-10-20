@@ -92,11 +92,11 @@ Après le flash, appuie sur **EN** pour redémarrer la carte normalement.
 
 ## Le firmware est à mettre à jour
 
-Après une mise à jour de Chili, le firmware de la carte peut être plus ancien. Les messages possibles :
+Après une mise à jour de Chili, le firmware de la carte peut être plus ancien. C'est obligatoire pour passer au firmware **0.2.0** : les programmes écrits avec `class Main` et `function` ne tournent pas sur un firmware plus ancien. Les messages possibles :
 
 ```
-  Firmware Chili : 0.1.2 (bytecode v1)
-                   une autre version (0.1.3) est disponible : chili flash
+  Firmware Chili : 0.1.3 (bytecode v1)
+                   une autre version (0.2.0) est disponible : chili flash
 ```
 
 ```
@@ -104,11 +104,11 @@ COM4 : le firmware de la carte ne connaît pas « kill ». Mets-le à jour avec 
 ```
 
 ```
-COM4 : le firmware gère le bytecode v0, ce compilateur produit la v1.
+COM4 : le firmware gère le bytecode v1, ce compilateur produit la v2.
 Mets le firmware à jour avec : chili flash
 ```
 
-Solution, par USB :
+Solution, par USB (ou le bandeau orange **Mettre à jour** de Chili Lab) :
 
 ```powershell
 chili flash
@@ -144,7 +144,7 @@ puis regarde l'état avec : chili check-port
 `chili monitor` (ou `chili push`) affiche :
 
 ```
-[chili] erreur : division par zero (fonction f0, pc 0008)
+[chili] erreur : division par zero (dans Main.main, pc 0008)
 ```
 
 et `chili check-port` indique `État : arrêté sur une erreur`.

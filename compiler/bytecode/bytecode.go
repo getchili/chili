@@ -8,13 +8,17 @@ import (
 	"errors"
 	"fmt"
 	"hash/crc32"
+	"sort"
 )
 
 const (
 	Magic      = "CHLB"
-	Version    = 1
-	HeaderSize = 16
-	FuncSize   = 8
+	Version    = 2
+	HeaderSize = 20
+	FuncSize   = 10
+	ClassSize  = 8 // en-tête d'une classe, suivi de 4 octets par méthode
+
+	NoParent = 0xFFFF
 )
 
 type Op byte
@@ -58,6 +62,11 @@ const (
 	CALL        Op = 0x50
 	CALL_NATIVE Op = 0x51
 	RET         Op = 0x52
+
+	ALLOC Op = 0x60 // u16 classe        : → objet
+	GETF  Op = 0x61 // u8 champ          : objet → valeur
+	SETF  Op = 0x62 // u8 champ          : objet valeur →
+	CALLM Op = 0x63 // u16 nom, u8 argc  : objet args → résultat
 )
 
 // Kind est le type d'un opérande.
@@ -117,6 +126,11 @@ var ops = map[Op]OpInfo{
 	CALL:        {"CALL", []Kind{U16}},
 	CALL_NATIVE: {"CALL_NATIVE", []Kind{U16, U8}},
 	RET:         {"RET", nil},
+
+	ALLOC: {"ALLOC", []Kind{U16}},
+	GETF:  {"GETF", []Kind{U8}},
+	SETF:  {"SETF", []Kind{U8}},
+	CALLM: {"CALLM", []Kind{U16, U8}},
 }
 
 // Info renvoie la description d'un opcode.
@@ -161,16 +175,33 @@ func ReadOperand(code []byte, pos int, k Kind) int32 {
 // Programme
 
 type Func struct {
-	Name      string // non encodé : sert au désassemblage
+	Name      string // texte du nom (Names[NameIdx])
+	NameIdx   uint16
 	Offset    uint32
 	NumParams uint8
 	NumLocals uint8
 	MaxStack  uint16
 }
 
+// Method associe un nom de méthode (index dans Names) à une fonction.
+type Method struct {
+	Selector uint16
+	Fn       uint16
+}
+
+type Class struct {
+	NameIdx   uint16
+	Parent    uint16 // NoParent si aucune
+	NumFields uint8  // champs hérités compris
+	Abstract  bool
+	Methods   []Method // table complète (héritées comprises), triée par Selector
+}
+
 type Program struct {
 	NumGlobals uint16
 	Funcs      []Func
+	Classes    []Class
+	Names      []string // noms des fonctions, classes et méthodes
 	Entry      uint16
 	Code       []byte
 }
@@ -183,30 +214,63 @@ func (p *Program) FuncEnd(i int) int {
 	return len(p.Code)
 }
 
+// Name renvoie le nom d'index i, ou "#i".
+func (p *Program) Name(i int) string {
+	if i >= 0 && i < len(p.Names) {
+		return p.Names[i]
+	}
+	return fmt.Sprintf("#%d", i)
+}
+
 // Encode produit le fichier .chlb.
 func (p *Program) Encode() []byte {
 	var b bytes.Buffer
 	le := binary.LittleEndian
+	u16 := func(v uint16) { b.Write(le.AppendUint16(nil, v)) }
+	u32 := func(v uint32) { b.Write(le.AppendUint32(nil, v)) }
+
 	b.WriteString(Magic)
 	b.WriteByte(Version)
 	b.WriteByte(0)
-	b.Write(le.AppendUint16(nil, p.NumGlobals))
-	b.Write(le.AppendUint16(nil, uint16(len(p.Funcs))))
-	b.Write(le.AppendUint16(nil, p.Entry))
-	b.Write(le.AppendUint32(nil, uint32(len(p.Code))))
+	u16(p.NumGlobals)
+	u16(uint16(len(p.Funcs)))
+	u16(p.Entry)
+	u32(uint32(len(p.Code)))
+	u16(uint16(len(p.Classes)))
+	u16(uint16(len(p.Names)))
 	for _, f := range p.Funcs {
-		b.Write(le.AppendUint32(nil, f.Offset))
+		u32(f.Offset)
 		b.WriteByte(f.NumParams)
 		b.WriteByte(f.NumLocals)
-		b.Write(le.AppendUint16(nil, f.MaxStack))
+		u16(f.MaxStack)
+		u16(f.NameIdx)
+	}
+	for _, c := range p.Classes {
+		u16(c.NameIdx)
+		u16(c.Parent)
+		b.WriteByte(c.NumFields)
+		flags := byte(0)
+		if c.Abstract {
+			flags = 1
+		}
+		b.WriteByte(flags)
+		u16(uint16(len(c.Methods)))
+		for _, m := range c.Methods {
+			u16(m.Selector)
+			u16(m.Fn)
+		}
+	}
+	for _, n := range p.Names {
+		b.WriteByte(byte(len(n)))
+		b.WriteString(n)
 	}
 	b.Write(p.Code)
-	b.Write(le.AppendUint32(nil, crc32.ChecksumIEEE(b.Bytes())))
+	u32(crc32.ChecksumIEEE(b.Bytes()))
 	return b.Bytes()
 }
 
 // Decode lit un fichier .chlb, vérifie son intégrité (taille, CRC) puis
-// son contenu (Verify). Les noms de fonctions sont f0, f1…
+// son contenu (Verify, sans contrôle des natives).
 func Decode(data []byte) (*Program, error) {
 	le := binary.LittleEndian
 	if len(data) < HeaderSize+4 {
@@ -216,35 +280,73 @@ func Decode(data []byte) (*Program, error) {
 		return nil, errors.New("ce n'est pas un fichier .chlb (magic invalide)")
 	}
 	if data[4] != Version {
-		return nil, fmt.Errorf("version %d non supportée (attendu %d)", data[4], Version)
+		return nil, fmt.Errorf("version de bytecode %d non supportée (attendu %d) : recompile le programme", data[4], Version)
 	}
-	numFuncs := int(le.Uint16(data[8:]))
-	codeSize := int(le.Uint32(data[12:]))
-	total := HeaderSize + numFuncs*FuncSize + codeSize + 4
-	if len(data) != total {
-		return nil, fmt.Errorf("taille incohérente : %d octets, attendu %d", len(data), total)
-	}
-	if got, want := crc32.ChecksumIEEE(data[:total-4]), le.Uint32(data[total-4:]); got != want {
+	if got, want := crc32.ChecksumIEEE(data[:len(data)-4]), le.Uint32(data[len(data)-4:]); got != want {
 		return nil, fmt.Errorf("CRC invalide (%08x, attendu %08x) : fichier corrompu", got, want)
 	}
+	body := data[:len(data)-4]
 
-	p := &Program{
-		NumGlobals: le.Uint16(data[6:]),
-		Entry:      le.Uint16(data[10:]),
-	}
+	p := &Program{NumGlobals: le.Uint16(body[6:]), Entry: le.Uint16(body[10:])}
+	numFuncs := int(le.Uint16(body[8:]))
+	codeSize := int(le.Uint32(body[12:]))
+	numClasses := int(le.Uint16(body[16:]))
+	numNames := int(le.Uint16(body[18:]))
+
 	off := HeaderSize
+	need := func(n int) error {
+		if off+n > len(body) {
+			return errors.New("fichier tronqué")
+		}
+		return nil
+	}
+	if err := need(numFuncs * FuncSize); err != nil {
+		return nil, err
+	}
 	for i := 0; i < numFuncs; i++ {
-		e := data[off : off+FuncSize]
+		e := body[off:]
 		p.Funcs = append(p.Funcs, Func{
-			Name:      fmt.Sprintf("f%d", i),
-			Offset:    le.Uint32(e),
-			NumParams: e[4],
-			NumLocals: e[5],
-			MaxStack:  le.Uint16(e[6:]),
+			Offset: le.Uint32(e), NumParams: e[4], NumLocals: e[5],
+			MaxStack: le.Uint16(e[6:]), NameIdx: le.Uint16(e[8:]),
 		})
 		off += FuncSize
 	}
-	p.Code = append([]byte(nil), data[off:off+codeSize]...)
+	for i := 0; i < numClasses; i++ {
+		if err := need(ClassSize); err != nil {
+			return nil, err
+		}
+		e := body[off:]
+		c := Class{NameIdx: le.Uint16(e), Parent: le.Uint16(e[2:]), NumFields: e[4], Abstract: e[5]&1 != 0}
+		n := int(le.Uint16(e[6:]))
+		off += ClassSize
+		if err := need(4 * n); err != nil {
+			return nil, err
+		}
+		for j := 0; j < n; j++ {
+			c.Methods = append(c.Methods, Method{Selector: le.Uint16(body[off:]), Fn: le.Uint16(body[off+2:])})
+			off += 4
+		}
+		p.Classes = append(p.Classes, c)
+	}
+	for i := 0; i < numNames; i++ {
+		if err := need(1); err != nil {
+			return nil, err
+		}
+		n := int(body[off])
+		off++
+		if err := need(n); err != nil {
+			return nil, err
+		}
+		p.Names = append(p.Names, string(body[off:off+n]))
+		off += n
+	}
+	if off+codeSize != len(body) {
+		return nil, fmt.Errorf("taille incohérente : %d octets, attendu %d", len(data), off+codeSize+4)
+	}
+	p.Code = append([]byte(nil), body[off:]...)
+	for i := range p.Funcs {
+		p.Funcs[i].Name = p.Name(int(p.Funcs[i].NameIdx))
+	}
 	if err := Verify(p, nil); err != nil {
 		return nil, err
 	}
@@ -266,6 +368,27 @@ func Verify(p *Program, natives NativeArity) error {
 	if p.Funcs[0].Offset != 0 {
 		return errors.New("la première fonction doit commencer à 0")
 	}
+	for i, n := range p.Names {
+		if len(n) > 255 {
+			return fmt.Errorf("nom %d trop long", i)
+		}
+	}
+	for i, c := range p.Classes {
+		if int(c.NameIdx) >= len(p.Names) {
+			return fmt.Errorf("classe %d : nom invalide", i)
+		}
+		if c.Parent != NoParent && int(c.Parent) >= len(p.Classes) {
+			return fmt.Errorf("classe %s : parent invalide", p.Name(int(c.NameIdx)))
+		}
+		if !sort.SliceIsSorted(c.Methods, func(a, b int) bool { return c.Methods[a].Selector < c.Methods[b].Selector }) {
+			return fmt.Errorf("classe %s : méthodes non triées", p.Name(int(c.NameIdx)))
+		}
+		for _, m := range c.Methods {
+			if int(m.Selector) >= len(p.Names) || int(m.Fn) >= len(p.Funcs) || p.Funcs[m.Fn].NumParams == 0 {
+				return fmt.Errorf("classe %s : méthode invalide", p.Name(int(c.NameIdx)))
+			}
+		}
+	}
 	for i, f := range p.Funcs {
 		end := p.FuncEnd(i)
 		if int(f.Offset) >= end || end > len(p.Code) {
@@ -273,6 +396,9 @@ func Verify(p *Program, natives NativeArity) error {
 		}
 		if f.NumParams > f.NumLocals {
 			return fmt.Errorf("%s : plus de paramètres que de locales", f.Name)
+		}
+		if int(f.NameIdx) >= len(p.Names) && len(p.Names) > 0 {
+			return fmt.Errorf("fonction %d : nom invalide", i)
 		}
 		if err := verifyFunc(p, i, natives); err != nil {
 			return fmt.Errorf("%s : %w", f.Name, err)
@@ -328,6 +454,14 @@ func verifyFunc(p *Program, fi int, natives NativeArity) error {
 				if ar != int(args[1]) {
 					return fmt.Errorf("CALL_NATIVE : native %d attend %d argument(s), %d fourni(s) à %d", args[0], ar, args[1], pc)
 				}
+			}
+		case ALLOC:
+			if int(args[0]) >= len(p.Classes) || p.Classes[args[0]].Abstract {
+				return fmt.Errorf("ALLOC : classe %d invalide à %d", args[0], pc)
+			}
+		case CALLM:
+			if int(args[0]) >= len(p.Names) {
+				return fmt.Errorf("CALLM : nom %d invalide à %d", args[0], pc)
 			}
 		case JMP, JZ, JNZ:
 			jumps = append(jumps, jump{pc, pos + int(args[0])})

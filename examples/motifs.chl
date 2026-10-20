@@ -1,0 +1,91 @@
+// motifs.chl — les classes en action : plusieurs façons de faire clignoter
+// la LED intégrée (GPIO 2), choisies au hasard à chaque tour.
+//
+// - Led : une classe simple, avec un champ et des méthodes ;
+// - Motif : une classe abstraite, qui impose la méthode jouer() ;
+// - Clignote, Battement, Morse : des classes filles qui la définissent.
+
+class Led {
+    let broche
+
+    constructor(b) {
+        this.broche = b
+        gpio.mode(b, 1)
+    }
+
+    function allume(duree) {
+        gpio.write(this.broche, 1)
+        delay(duree)
+        gpio.write(this.broche, 0)
+    }
+}
+
+abstract class Motif {
+    let led
+
+    constructor(led) {
+        this.led = led
+    }
+
+    abstract function jouer()
+
+    // Joue le motif plusieurs fois : la même méthode pour toutes les classes filles.
+    function repeter(fois) {
+        let i = 0
+        while i < fois {
+            this.jouer()
+            i += 1
+        }
+    }
+}
+
+class Clignote extends Motif {
+    function jouer() {
+        this.led.allume(300)
+        delay(300)
+    }
+}
+
+class Battement extends Motif {
+    function jouer() {
+        this.led.allume(80)
+        delay(120)
+        this.led.allume(80)
+        delay(700)
+    }
+}
+
+class Morse extends Motif {
+    let unite = 150
+
+    function jouer() {
+        this.lettre(3, this.unite)      // S
+        this.lettre(3, this.unite * 3)  // O
+        this.lettre(3, this.unite)      // S
+        delay(this.unite * 6)
+    }
+
+    function lettre(n, duree) {
+        let i = 0
+        while i < n {
+            this.led.allume(duree)
+            delay(this.unite)
+            i += 1
+        }
+        delay(this.unite * 2)
+    }
+}
+
+class Main {
+    function main() {
+        let led = new Led(2)
+        while true {
+            let choix = random(1, 3)
+            print(choix)
+            let m = new Clignote(led)
+            if choix == 2 { m = new Battement(led) }
+            if choix == 3 { m = new Morse(led) }
+            m.repeter(2)
+        }
+    }
+}

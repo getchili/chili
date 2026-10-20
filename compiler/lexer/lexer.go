@@ -81,7 +81,8 @@ func (lx *Lexer) Next() token.Token {
 		lit := string(lx.src[start:lx.off])
 		kind := token.LookupIdent(lit)
 		switch kind {
-		case token.IDENT, token.TRUE, token.FALSE, token.RETURN, token.BREAK, token.CONTINUE:
+		case token.IDENT, token.TRUE, token.FALSE, token.RETURN, token.BREAK, token.CONTINUE,
+			token.THIS, token.SUPER:
 			lx.insertSemi = true
 		default:
 			lx.insertSemi = false

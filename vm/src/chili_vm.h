@@ -28,7 +28,7 @@ extern "C" {
 #endif
 
 /* Version du format bytecode supportée. */
-#define CHILI_BYTECODE_VERSION 1
+#define CHILI_BYTECODE_VERSION 2
 
 /* Taille de la pile en valeurs 32 bits : globales + locales + opérandes. */
 #ifndef CHILI_STACK_SIZE
@@ -43,6 +43,20 @@ extern "C" {
 /* Nombre maximal de fonctions dans un programme. */
 #ifndef CHILI_MAX_FUNCS
 #define CHILI_MAX_FUNCS 256
+#endif
+
+/* Nombre maximal de classes et de noms (fonctions, classes, méthodes). */
+#ifndef CHILI_MAX_CLASSES
+#define CHILI_MAX_CLASSES 64
+#endif
+#ifndef CHILI_MAX_NAMES
+#define CHILI_MAX_NAMES 512
+#endif
+
+/* Mémoire des objets, en mots de 32 bits (en-tête + champs de chaque objet).
+ * Les objets inaccessibles sont récupérés par un ramasse-miettes quand elle est pleine. */
+#ifndef CHILI_HEAP_WORDS
+#define CHILI_HEAP_WORDS 4096
 #endif
 
 typedef enum {
@@ -76,7 +90,17 @@ typedef struct {
     uint8_t num_params;
     uint8_t num_locals;
     uint16_t max_stack;
+    uint16_t name;       /* index dans la table des noms */
 } chili_func;
+
+typedef struct {
+    uint16_t name;
+    uint16_t parent;          /* 0xFFFF : aucune */
+    uint8_t num_fields;       /* champs hérités compris */
+    uint8_t abstract;
+    uint16_t num_methods;
+    const uint8_t *methods;   /* num_methods × (u16 nom, u16 fonction), triés par nom */
+} chili_class;
 
 typedef struct {
     uint16_t fn;
@@ -92,6 +116,10 @@ struct chili_vm {
     uint16_t num_funcs;
     uint16_t entry;
     chili_func funcs[CHILI_MAX_FUNCS];
+    uint16_t num_classes;
+    chili_class classes[CHILI_MAX_CLASSES];
+    uint16_t num_names;
+    const uint8_t *names[CHILI_MAX_NAMES]; /* chaque nom : longueur (u8) puis octets */
 
     const chili_native *natives;
     uint16_t num_natives;
@@ -103,6 +131,13 @@ struct chili_vm {
     chili_frame frames[CHILI_MAX_FRAMES];
     uint8_t num_frames;
     chili_status state;
+
+    /* Objets : blocs [en-tête][champs…]. En-tête = taille (16 bits bas,
+     * en-tête compris) | (classe + 1) << 16, classe + 1 = 0 pour un bloc libre. */
+    uint32_t heap[CHILI_HEAP_WORDS];
+    uint32_t heap_starts[(CHILI_HEAP_WORDS + 31) / 32]; /* début de bloc */
+    uint32_t heap_marks[(CHILI_HEAP_WORDS + 31) / 32];  /* ramasse-miettes */
+    uint32_t gc_runs;
 
     char error[128];
 };

@@ -13,7 +13,14 @@ const (
 	INT
 
 	// Mots-clés
-	FN
+	FUNCTION
+	CLASS
+	ABSTRACT
+	EXTENDS
+	CONSTRUCTOR
+	THIS
+	SUPER
+	NEW
 	LET
 	IF
 	ELSE
@@ -70,16 +77,23 @@ var names = [...]string{
 	IDENT:   "IDENT",
 	INT:     "INT",
 
-	FN:       "fn",
-	LET:      "let",
-	IF:       "if",
-	ELSE:     "else",
-	WHILE:    "while",
-	RETURN:   "return",
-	BREAK:    "break",
-	CONTINUE: "continue",
-	TRUE:     "true",
-	FALSE:    "false",
+	FUNCTION:    "function",
+	CLASS:       "class",
+	ABSTRACT:    "abstract",
+	EXTENDS:     "extends",
+	CONSTRUCTOR: "constructor",
+	THIS:        "this",
+	SUPER:       "super",
+	NEW:         "new",
+	LET:         "let",
+	IF:          "if",
+	ELSE:        "else",
+	WHILE:       "while",
+	RETURN:      "return",
+	BREAK:       "break",
+	CONTINUE:    "continue",
+	TRUE:        "true",
+	FALSE:       "false",
 
 	PLUS:    "+",
 	MINUS:   "-",
@@ -127,16 +141,23 @@ func (k Kind) String() string {
 }
 
 var keywords = map[string]Kind{
-	"fn":       FN,
-	"let":      LET,
-	"if":       IF,
-	"else":     ELSE,
-	"while":    WHILE,
-	"return":   RETURN,
-	"break":    BREAK,
-	"continue": CONTINUE,
-	"true":     TRUE,
-	"false":    FALSE,
+	"function":    FUNCTION,
+	"class":       CLASS,
+	"abstract":    ABSTRACT,
+	"extends":     EXTENDS,
+	"constructor": CONSTRUCTOR,
+	"this":        THIS,
+	"super":       SUPER,
+	"new":         NEW,
+	"let":         LET,
+	"if":          IF,
+	"else":        ELSE,
+	"while":       WHILE,
+	"return":      RETURN,
+	"break":       BREAK,
+	"continue":    CONTINUE,
+	"true":        TRUE,
+	"false":       FALSE,
 }
 
 // LookupIdent renvoie le mot-clé correspondant à ident, ou IDENT.

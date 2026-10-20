@@ -4,7 +4,7 @@
 let led = 2
 let bouton = 0
 
-fn clignote(fois) {
+function clignote(fois) {
     let i = 0
     while i < fois {
         gpio.write(led, 1)
@@ -15,16 +15,18 @@ fn clignote(fois) {
     }
 }
 
-fn main() {
-    gpio.mode(led, 1)
-    gpio.mode(bouton, 2)    // entrée avec résistance de rappel : 0 quand on appuie
-    while true {
-        if gpio.read(bouton) == 0 {
-            let tirage = random(1, 6)
-            print(tirage)
-            clignote(tirage)
-            delay(300)      // laisse le temps de relâcher le bouton
+class Main {
+    function main() {
+        gpio.mode(led, 1)
+        gpio.mode(bouton, 2)    // entrée avec résistance de rappel : 0 quand on appuie
+        while true {
+            if gpio.read(bouton) == 0 {
+                let tirage = random(1, 6)
+                print(tirage)
+                clignote(tirage)
+                delay(300)      // laisse le temps de relâcher le bouton
+            }
+            delay(20)
         }
-        delay(20)
     }
 }

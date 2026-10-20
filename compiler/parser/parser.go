@@ -12,6 +12,7 @@ import (
 	"github.com/getchili/chili/compiler/ast"
 	"github.com/getchili/chili/compiler/diag"
 	"github.com/getchili/chili/compiler/lexer"
+	"github.com/getchili/chili/compiler/natives"
 	"github.com/getchili/chili/compiler/token"
 )
 
@@ -191,12 +192,19 @@ func (p *Parser) parseProgram() *ast.Program {
 func (p *Parser) parseTopDecl() (d ast.Decl, ok bool) {
 	defer p.recoverBailout()
 	switch p.tok.Kind {
-	case token.FN:
+	case token.FUNCTION:
 		d = p.parseFnDecl()
 	case token.LET:
 		d = p.parseLet()
+	case token.CLASS, token.ABSTRACT:
+		d = p.parseClass()
+	case token.IDENT:
+		if p.tok.Lit == "fn" {
+			p.errorf(p.tok.Pos, "'fn' n'existe plus : écris 'function'")
+		}
+		fallthrough
 	default:
-		p.errorf(p.tok.Pos, "'fn' ou 'let' attendu au niveau global, trouvé %s", describe(p.tok))
+		p.errorf(p.tok.Pos, "'class', 'function' ou 'let' attendu au niveau global, trouvé %s", describe(p.tok))
 	}
 	p.endStmt()
 	return d, true
@@ -214,19 +222,106 @@ func (p *Parser) endStmt() {
 }
 
 func (p *Parser) parseFnDecl() *ast.FnDecl {
-	fnTok := p.expect(token.FN)
+	fnTok := p.expect(token.FUNCTION)
 	d := &ast.FnDecl{FnPos: fnTok.Pos, Name: p.ident()}
+	d.Params = p.parseParams()
+	d.Body = p.parseBlock()
+	return d
+}
+
+// parseParams lit « ( a, b, … ) ».
+func (p *Parser) parseParams() []*ast.Ident {
+	var params []*ast.Ident
 	p.expect(token.LPAREN)
 	if p.tok.Kind != token.RPAREN {
-		d.Params = append(d.Params, p.ident())
+		params = append(params, p.ident())
 		for p.tok.Kind == token.COMMA {
 			p.next()
-			d.Params = append(d.Params, p.ident())
+			params = append(params, p.ident())
 		}
 	}
 	p.expect(token.RPAREN)
-	d.Body = p.parseBlock()
+	return params
+}
+
+// parseClass lit une classe (cf. docs/classes.md §4).
+func (p *Parser) parseClass() *ast.ClassDecl {
+	d := &ast.ClassDecl{ClassPos: p.tok.Pos}
+	if p.tok.Kind == token.ABSTRACT {
+		d.Abstract = true
+		p.next()
+	}
+	p.expect(token.CLASS)
+	d.Name = p.ident()
+	if p.tok.Kind == token.EXTENDS {
+		p.next()
+		d.Parent = p.ident()
+	}
+	p.expect(token.LBRACE)
+	for p.tok.Kind != token.RBRACE && p.tok.Kind != token.EOF {
+		if p.tok.Kind == token.SEMICOLON {
+			p.next()
+			continue
+		}
+		if !p.parseMemberRecover(d) {
+			p.sync()
+		}
+	}
+	p.expect(token.RBRACE)
 	return d
+}
+
+func (p *Parser) parseMemberRecover(d *ast.ClassDecl) (ok bool) {
+	defer p.recoverBailout()
+	p.parseMember(d)
+	p.endStmt()
+	return true
+}
+
+func (p *Parser) parseMember(d *ast.ClassDecl) {
+	switch p.tok.Kind {
+	case token.LET:
+		t := p.tok
+		p.next()
+		f := &ast.FieldDecl{LetPos: t.Pos, Name: p.ident()}
+		if p.tok.Kind == token.ASSIGN {
+			p.next()
+			f.Value = p.parseExpr()
+		}
+		d.Fields = append(d.Fields, f)
+
+	case token.CONSTRUCTOR:
+		t := p.tok
+		p.next()
+		m := &ast.MethodDecl{FnPos: t.Pos, Name: &ast.Ident{NamePos: t.Pos, Name: "constructor"}}
+		m.Params = p.parseParams()
+		m.Body = p.parseBlock()
+		if d.Ctor != nil {
+			p.errorf(t.Pos, "la classe %s a déjà un constructeur (ligne %d)", d.Name.Name, d.Ctor.Pos().Line)
+		}
+		d.Ctor = m
+
+	case token.ABSTRACT, token.FUNCTION:
+		m := &ast.MethodDecl{FnPos: p.tok.Pos}
+		if p.tok.Kind == token.ABSTRACT {
+			m.Abstract = true
+			p.next()
+		}
+		p.expect(token.FUNCTION)
+		m.Name = p.ident()
+		m.Params = p.parseParams()
+		if m.Abstract {
+			if p.tok.Kind == token.LBRACE {
+				p.errorf(p.tok.Pos, "une méthode abstraite n'a pas de corps")
+			}
+		} else {
+			m.Body = p.parseBlock()
+		}
+		d.Methods = append(d.Methods, m)
+
+	default:
+		p.errorf(p.tok.Pos, "dans une classe : 'let', 'constructor' ou 'function' attendu, trouvé %s", describe(p.tok))
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -282,8 +377,8 @@ func (p *Parser) parseStmt() ast.Stmt {
 		return &ast.BranchStmt{TokPos: t.Pos, Tok: t.Kind}
 	case token.LBRACE:
 		return p.parseBlock()
-	case token.FN:
-		p.errorf(p.tok.Pos, "les fonctions ne peuvent être déclarées qu'au niveau global")
+	case token.FUNCTION, token.CLASS, token.ABSTRACT:
+		p.errorf(p.tok.Pos, "les fonctions et les classes se déclarent au niveau global")
 	}
 	return p.parseSimpleStmt()
 }
@@ -322,15 +417,18 @@ func (p *Parser) parseSimpleStmt() ast.Stmt {
 	x := p.parseExpr()
 	if isAssignOp(p.tok.Kind) {
 		op := p.tok
-		target, ok := x.(*ast.Ident)
-		if !ok {
-			p.errorf(op.Pos, "on ne peut affecter qu'une variable")
+		switch x.(type) {
+		case *ast.Ident, *ast.FieldExpr:
+		default:
+			p.errorf(op.Pos, "on ne peut affecter qu'une variable ou un champ (this.champ)")
 		}
 		p.next()
-		return &ast.AssignStmt{Target: target, Op: op.Kind, Value: p.parseExpr()}
+		return &ast.AssignStmt{Target: x, Op: op.Kind, Value: p.parseExpr()}
 	}
-	if _, ok := x.(*ast.CallExpr); !ok {
-		p.errorf(x.Pos(), "expression inutilisée : seul un appel de fonction peut servir d'instruction")
+	switch x.(type) {
+	case *ast.CallExpr, *ast.MethodCall, *ast.SuperCall, *ast.SuperMethodCall, *ast.NewExpr:
+	default:
+		p.errorf(x.Pos(), "expression inutilisée : seul un appel (fonction, méthode, new) peut servir d'instruction")
 	}
 	return &ast.ExprStmt{X: x}
 }
@@ -390,28 +488,55 @@ func (p *Parser) parseUnary() ast.Expr {
 
 func (p *Parser) parsePostfix() ast.Expr {
 	x := p.parsePrimary()
-	if p.tok.Kind != token.LPAREN {
-		return x
+	called := false
+	for {
+		switch p.tok.Kind {
+		case token.LPAREN:
+			switch x.(type) {
+			case *ast.Ident, *ast.QualifiedName:
+			default:
+				p.errorf(p.tok.Pos, "seule une fonction nommée peut être appelée")
+			}
+			if called {
+				p.errorf(p.tok.Pos, "seule une fonction nommée peut être appelée")
+			}
+			lp := p.tok
+			x = &ast.CallExpr{Fn: x, LParen: lp.Pos, Args: p.parseArgs()}
+			called = true
+
+		case token.DOT:
+			p.next()
+			name := p.ident()
+			if p.tok.Kind == token.LPAREN {
+				x = &ast.MethodCall{Recv: x, Name: name, Args: p.parseArgs()}
+				called = true
+				continue
+			}
+			th, ok := x.(*ast.ThisExpr)
+			if !ok {
+				p.errorf(name.Pos(), "les champs sont privés : écris this.%s dans la classe, ou passe par une méthode", name.Name)
+			}
+			x = &ast.FieldExpr{ThisPos: th.ThisPos, Name: name}
+
+		default:
+			return x
+		}
 	}
-	switch x.(type) {
-	case *ast.Ident, *ast.QualifiedName:
-	default:
-		p.errorf(p.tok.Pos, "seule une fonction nommée peut être appelée")
-	}
-	lp := p.expect(token.LPAREN)
-	call := &ast.CallExpr{Fn: x, LParen: lp.Pos}
+}
+
+// parseArgs lit « ( expr, expr, … ) ».
+func (p *Parser) parseArgs() []ast.Expr {
+	var args []ast.Expr
+	p.expect(token.LPAREN)
 	if p.tok.Kind != token.RPAREN {
-		call.Args = append(call.Args, p.parseExpr())
+		args = append(args, p.parseExpr())
 		for p.tok.Kind == token.COMMA {
 			p.next()
-			call.Args = append(call.Args, p.parseExpr())
+			args = append(args, p.parseExpr())
 		}
 	}
 	p.expect(token.RPAREN)
-	if p.tok.Kind == token.LPAREN {
-		p.errorf(p.tok.Pos, "seule une fonction nommée peut être appelée")
-	}
-	return call
+	return args
 }
 
 func (p *Parser) parsePrimary() ast.Expr {
@@ -429,11 +554,25 @@ func (p *Parser) parsePrimary() ast.Expr {
 		return &ast.BoolLit{LitPos: t.Pos, Value: t.Kind == token.TRUE}
 	case token.IDENT:
 		id := p.ident()
-		if p.tok.Kind == token.DOT {
+		if p.tok.Kind == token.DOT && natives.IsModule(id.Name) {
 			p.next()
 			return &ast.QualifiedName{Module: id, Name: p.ident()}
 		}
 		return id
+	case token.THIS:
+		p.next()
+		return &ast.ThisExpr{ThisPos: t.Pos}
+	case token.NEW:
+		p.next()
+		return &ast.NewExpr{NewPos: t.Pos, Class: p.ident(), Args: p.parseArgs()}
+	case token.SUPER:
+		p.next()
+		if p.tok.Kind == token.DOT {
+			p.next()
+			name := p.ident()
+			return &ast.SuperMethodCall{SuperPos: t.Pos, Name: name, Args: p.parseArgs()}
+		}
+		return &ast.SuperCall{SuperPos: t.Pos, Args: p.parseArgs()}
 	case token.LPAREN:
 		p.next()
 		x := p.parseExpr()

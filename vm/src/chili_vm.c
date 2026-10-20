@@ -16,11 +16,16 @@ enum {
     OP_NEG = 0x2A, OP_NOT = 0x2B, OP_BNOT = 0x2C,
     OP_EQ = 0x30, OP_NE = 0x31, OP_LT = 0x32, OP_LE = 0x33, OP_GT = 0x34, OP_GE = 0x35,
     OP_JMP = 0x40, OP_JZ = 0x41, OP_JNZ = 0x42,
-    OP_CALL = 0x50, OP_CALL_NATIVE = 0x51, OP_RET = 0x52
+    OP_CALL = 0x50, OP_CALL_NATIVE = 0x51, OP_RET = 0x52,
+    OP_ALLOC = 0x60, OP_GETF = 0x61, OP_SETF = 0x62, OP_CALLM = 0x63
 };
 
-#define HEADER_SIZE 16
-#define FUNC_SIZE 8
+#define HEADER_SIZE 20
+#define FUNC_SIZE 10
+#define CLASS_SIZE 8
+#define NO_PARENT 0xFFFF
+
+#define HANDLE_TAG 0x4F000000u
 
 /* Taille totale de chaque instruction (opcode + opérandes), 0 = opcode inconnu. */
 static uint8_t op_size(uint8_t op)
@@ -33,11 +38,12 @@ static uint8_t op_size(uint8_t op)
     case OP_EQ: case OP_NE: case OP_LT: case OP_LE: case OP_GT: case OP_GE:
     case OP_RET:
         return 1;
-    case OP_PUSH8: case OP_LOAD: case OP_STORE:
+    case OP_PUSH8: case OP_LOAD: case OP_STORE: case OP_GETF: case OP_SETF:
         return 2;
     case OP_GLOAD: case OP_GSTORE: case OP_JMP: case OP_JZ: case OP_JNZ: case OP_CALL:
+    case OP_ALLOC:
         return 3;
-    case OP_CALL_NATIVE:
+    case OP_CALL_NATIVE: case OP_CALLM:
         return 4;
     case OP_PUSH:
         return 5;
@@ -83,6 +89,133 @@ chili_status chili_fail(chili_vm *vm, const char *fmt, ...)
     return CHILI_ERROR;
 }
 
+/* Nom d'index i : longueur dans *len, pointeur renvoyé ("?" si invalide). */
+static const char *name_of(const chili_vm *vm, uint16_t i, int *len)
+{
+    if (i >= vm->num_names) {
+        *len = 1;
+        return "?";
+    }
+    *len = vm->names[i][0];
+    return (const char *)vm->names[i] + 1;
+}
+
+/* ------------------------------------------------------------------------ */
+/* Objets et ramasse-miettes                                                */
+
+#define BIT_GET(set, i) (((set)[(i) >> 5] >> ((i) & 31)) & 1u)
+#define BIT_SET(set, i) ((set)[(i) >> 5] |= 1u << ((i) & 31))
+#define BIT_CLR(set, i) ((set)[(i) >> 5] &= ~(1u << ((i) & 31)))
+
+#define BLK_SIZE(h) ((h) & 0xFFFFu)
+#define BLK_CLASS1(h) ((h) >> 16) /* classe + 1, 0 = libre */
+
+static void heap_init(chili_vm *vm)
+{
+    memset(vm->heap_starts, 0, sizeof vm->heap_starts);
+    memset(vm->heap_marks, 0, sizeof vm->heap_marks);
+    vm->heap[0] = CHILI_HEAP_WORDS; /* un seul bloc libre */
+    BIT_SET(vm->heap_starts, 0);
+    vm->gc_runs = 0;
+}
+
+/* Si v désigne un objet vivant, renvoie 1 et son offset dans *off. Une valeur
+ * entière qui ressemble par hasard à un objet est traitée comme telle
+ * (ramasse-miettes conservatif) : au pire, l'objet est gardé plus longtemps. */
+static int as_object(const chili_vm *vm, int32_t v, uint32_t *off)
+{
+    uint32_t u = (uint32_t)v;
+    if ((u & 0xFF000000u) != HANDLE_TAG)
+        return 0;
+    uint32_t o = u & 0xFFFFFFu;
+    if (o >= CHILI_HEAP_WORDS || !BIT_GET(vm->heap_starts, o) || BLK_CLASS1(vm->heap[o]) == 0)
+        return 0;
+    *off = o;
+    return 1;
+}
+
+static void mark_value(chili_vm *vm, int32_t v, int *changed)
+{
+    uint32_t o;
+    if (as_object(vm, v, &o) && !BIT_GET(vm->heap_marks, o)) {
+        BIT_SET(vm->heap_marks, o);
+        *changed = 1;
+    }
+}
+
+static void gc(chili_vm *vm)
+{
+    int changed = 0;
+    memset(vm->heap_marks, 0, sizeof vm->heap_marks);
+
+    /* Racines : globales, locales et valeurs temporaires de tous les cadres. */
+    for (uint32_t i = 0; i < vm->sp; i++)
+        mark_value(vm, vm->stack[i], &changed);
+
+    /* Propagation : les champs des objets marqués, jusqu'à stabilité. */
+    while (changed) {
+        changed = 0;
+        for (uint32_t o = 0; o < CHILI_HEAP_WORDS; o += BLK_SIZE(vm->heap[o])) {
+            uint32_t h = vm->heap[o];
+            if (BLK_CLASS1(h) && BIT_GET(vm->heap_marks, o))
+                for (uint32_t f = 1; f < BLK_SIZE(h); f++)
+                    mark_value(vm, (int32_t)vm->heap[o + f], &changed);
+        }
+    }
+
+    /* Balayage : libère les objets non marqués et fusionne les blocs libres voisins. */
+    uint32_t prev_free = CHILI_HEAP_WORDS; /* aucun */
+    for (uint32_t o = 0; o < CHILI_HEAP_WORDS;) {
+        uint32_t size = BLK_SIZE(vm->heap[o]);
+        if (BLK_CLASS1(vm->heap[o]) && !BIT_GET(vm->heap_marks, o))
+            vm->heap[o] = size; /* libre */
+        if (BLK_CLASS1(vm->heap[o]) == 0) {
+            if (prev_free != CHILI_HEAP_WORDS) {
+                vm->heap[prev_free] = BLK_SIZE(vm->heap[prev_free]) + size;
+                BIT_CLR(vm->heap_starts, o);
+            } else {
+                prev_free = o;
+            }
+        } else {
+            prev_free = CHILI_HEAP_WORDS;
+        }
+        o += size;
+    }
+    memset(vm->heap_marks, 0, sizeof vm->heap_marks);
+    vm->gc_runs++;
+}
+
+/* Premier bloc libre assez grand : renvoie son offset, ou CHILI_HEAP_WORDS. */
+static uint32_t find_free(chili_vm *vm, uint32_t need)
+{
+    for (uint32_t o = 0; o < CHILI_HEAP_WORDS; o += BLK_SIZE(vm->heap[o]))
+        if (BLK_CLASS1(vm->heap[o]) == 0 && BLK_SIZE(vm->heap[o]) >= need)
+            return o;
+    return CHILI_HEAP_WORDS;
+}
+
+/* Crée un objet de la classe c (champs à 0). Renvoie 0 si la mémoire est pleine. */
+static int32_t alloc_object(chili_vm *vm, uint16_t c)
+{
+    uint32_t need = (uint32_t)vm->classes[c].num_fields + 1;
+    uint32_t o = find_free(vm, need);
+    if (o == CHILI_HEAP_WORDS) {
+        gc(vm);
+        o = find_free(vm, need);
+        if (o == CHILI_HEAP_WORDS)
+            return 0;
+    }
+    uint32_t size = BLK_SIZE(vm->heap[o]);
+    if (size > need) { /* découpe : le reste forme un bloc libre */
+        vm->heap[o + need] = size - need;
+        BIT_SET(vm->heap_starts, o + need);
+        size = need;
+    }
+    vm->heap[o] = size | ((uint32_t)(c + 1) << 16);
+    memset(&vm->heap[o + 1], 0, (size - 1) * sizeof vm->heap[0]);
+    return (int32_t)(HANDLE_TAG | o);
+}
+
 /* ------------------------------------------------------------------------ */
 /* Chargement et vérification                                               */
 
@@ -124,6 +257,14 @@ static chili_status verify_func(chili_vm *vm, uint16_t fi)
                                   vm->natives[id].name, vm->natives[id].arity, a[2]);
             break;
         }
+        case OP_ALLOC:
+            if (rd16(a) >= vm->num_classes || vm->classes[rd16(a)].abstract)
+                return chili_fail(vm, "f%u : classe %u invalide", fi, rd16(a));
+            break;
+        case OP_CALLM:
+            if (rd16(a) >= vm->num_names)
+                return chili_fail(vm, "f%u : nom %u invalide", fi, rd16(a));
+            break;
         default:
             break;
         }
@@ -162,24 +303,65 @@ chili_status chili_load(chili_vm *vm, const uint8_t *data, size_t size,
     if (memcmp(data, "CHLB", 4) != 0)
         return chili_fail(vm, "ce n'est pas un fichier .chlb");
     if (data[4] != CHILI_BYTECODE_VERSION)
-        return chili_fail(vm, "version de bytecode %u non supportee (attendu %u)",
+        return chili_fail(vm, "version de bytecode %u non supportee (attendu %u) : recompile le programme",
                           data[4], CHILI_BYTECODE_VERSION);
-
-    uint16_t num_funcs = rd16(data + 8);
-    uint32_t code_size = rd32(data + 12);
-    size_t total = HEADER_SIZE + (size_t)num_funcs * FUNC_SIZE + (size_t)code_size + 4;
-    if (code_size > size || total != size)
-        return chili_fail(vm, "taille incoherente (%lu octets, attendu %lu)",
-                          (unsigned long)size, (unsigned long)total);
     if (chili_crc32(data, size - 4) != rd32(data + size - 4))
         return chili_fail(vm, "CRC invalide : fichier corrompu");
+
+    size_t body = size - 4;
+    uint16_t num_funcs = rd16(data + 8);
+    uint32_t code_size = rd32(data + 12);
+    uint16_t num_classes = rd16(data + 16);
+    uint16_t num_names = rd16(data + 18);
     if (num_funcs == 0 || num_funcs > CHILI_MAX_FUNCS)
         return chili_fail(vm, "nombre de fonctions invalide (%u, max %u)", num_funcs, CHILI_MAX_FUNCS);
+    if (num_classes > CHILI_MAX_CLASSES)
+        return chili_fail(vm, "trop de classes (%u, max %u)", num_classes, CHILI_MAX_CLASSES);
+    if (num_names > CHILI_MAX_NAMES)
+        return chili_fail(vm, "trop de noms (%u, max %u)", num_names, CHILI_MAX_NAMES);
 
     vm->num_globals = rd16(data + 6);
     vm->num_funcs = num_funcs;
     vm->entry = rd16(data + 10);
-    vm->code = data + HEADER_SIZE + (size_t)num_funcs * FUNC_SIZE;
+    vm->num_classes = num_classes;
+    vm->num_names = num_names;
+
+    size_t off = HEADER_SIZE;
+#define NEED(n) do { if (off + (n) > body) return chili_fail(vm, "fichier tronque"); } while (0)
+    NEED((size_t)num_funcs * FUNC_SIZE);
+    for (uint16_t i = 0; i < num_funcs; i++, off += FUNC_SIZE) {
+        const uint8_t *e = data + off;
+        chili_func *f = &vm->funcs[i];
+        f->offset = rd32(e);
+        f->num_params = e[4];
+        f->num_locals = e[5];
+        f->max_stack = rd16(e + 6);
+        f->name = rd16(e + 8);
+    }
+    for (uint16_t i = 0; i < num_classes; i++) {
+        NEED(CLASS_SIZE);
+        const uint8_t *e = data + off;
+        chili_class *c = &vm->classes[i];
+        c->name = rd16(e);
+        c->parent = rd16(e + 2);
+        c->num_fields = e[4];
+        c->abstract = e[5] & 1;
+        c->num_methods = rd16(e + 6);
+        off += CLASS_SIZE;
+        NEED((size_t)c->num_methods * 4);
+        c->methods = data + off;
+        off += (size_t)c->num_methods * 4;
+    }
+    for (uint16_t i = 0; i < num_names; i++) {
+        NEED(1);
+        vm->names[i] = data + off;
+        NEED(1 + (size_t)data[off]);
+        off += 1 + data[off];
+    }
+#undef NEED
+    if (off + code_size != body)
+        return chili_fail(vm, "taille incoherente (%lu octets)", (unsigned long)size);
+    vm->code = data + off;
     vm->code_size = code_size;
 
     if (vm->entry >= num_funcs)
@@ -187,13 +369,16 @@ chili_status chili_load(chili_vm *vm, const uint8_t *data, size_t size,
     if (vm->num_globals >= CHILI_STACK_SIZE)
         return chili_fail(vm, "trop de globales pour la pile (%u)", vm->num_globals);
 
-    for (uint16_t i = 0; i < num_funcs; i++) {
-        const uint8_t *e = data + HEADER_SIZE + (size_t)i * FUNC_SIZE;
-        chili_func *f = &vm->funcs[i];
-        f->offset = rd32(e);
-        f->num_params = e[4];
-        f->num_locals = e[5];
-        f->max_stack = rd16(e + 6);
+    for (uint16_t i = 0; i < num_classes; i++) {
+        const chili_class *c = &vm->classes[i];
+        if (c->name >= num_names || (c->parent != NO_PARENT && c->parent >= num_classes))
+            return chili_fail(vm, "classe %u invalide", i);
+        for (uint16_t m = 0; m < c->num_methods; m++) {
+            uint16_t sel = rd16(c->methods + 4 * m), fn = rd16(c->methods + 4 * m + 2);
+            if (sel >= num_names || fn >= num_funcs || vm->funcs[fn].num_params == 0 ||
+                (m > 0 && rd16(c->methods + 4 * (m - 1)) >= sel))
+                return chili_fail(vm, "classe %u : table de methodes invalide", i);
+        }
     }
     for (uint16_t i = 0; i < num_funcs; i++) {
         chili_func *f = &vm->funcs[i];
@@ -202,6 +387,8 @@ chili_status chili_load(chili_vm *vm, const uint8_t *data, size_t size,
             return chili_fail(vm, "f%u : bornes de code invalides", i);
         if (f->num_params > f->num_locals)
             return chili_fail(vm, "f%u : plus de parametres que de locales", i);
+        if (num_names > 0 && f->name >= num_names)
+            return chili_fail(vm, "f%u : nom invalide", i);
     }
     for (uint16_t i = 0; i < num_funcs; i++)
         if (verify_func(vm, i) != CHILI_OK)
@@ -234,6 +421,7 @@ static chili_status enter(chili_vm *vm, uint16_t fn)
 chili_status chili_reset(chili_vm *vm)
 {
     memset(vm->stack, 0, sizeof vm->stack);
+    heap_init(vm);
     vm->sp = vm->num_globals;
     vm->num_frames = 0;
     vm->error[0] = '\0';
@@ -241,6 +429,26 @@ chili_status chili_reset(chili_vm *vm)
     if (enter(vm, vm->entry) != CHILI_OK)
         return CHILI_ERROR;
     return CHILI_OK;
+}
+
+/* Cherche la méthode sel dans la classe c (recherche dichotomique). */
+static int find_method(const chili_vm *vm, uint16_t c, uint16_t sel, uint16_t *fn)
+{
+    const chili_class *k = &vm->classes[c];
+    int lo = 0, hi = (int)k->num_methods - 1;
+    while (lo <= hi) {
+        int mid = (lo + hi) / 2;
+        uint16_t s = rd16(k->methods + 4 * mid);
+        if (s == sel) {
+            *fn = rd16(k->methods + 4 * mid + 2);
+            return 1;
+        }
+        if (s < sel)
+            lo = mid + 1;
+        else
+            hi = mid - 1;
+    }
+    return 0;
 }
 
 #define PUSH(v) (vm->stack[vm->sp++] = (v))
@@ -266,7 +474,13 @@ chili_status chili_run(chili_vm *vm, uint32_t max_steps)
         const uint8_t *a = code + pc + 1;
         fr->pc = pc + op_size(op);
 
-#define FAIL(msg) chili_fail(vm, "%s (fonction f%u, pc %04lx)", msg, fr->fn, (unsigned long)pc)
+#define FAIL(...) do { \
+        char msg_[96]; \
+        int fn_len_; \
+        const char *fn_name_ = name_of(vm, vm->funcs[fr->fn].name, &fn_len_); \
+        snprintf(msg_, sizeof msg_, __VA_ARGS__); \
+        return chili_fail(vm, "%s (dans %.*s, pc %04lx)", msg_, fn_len_, fn_name_, (unsigned long)pc); \
+    } while (0)
 
         switch (op) {
         case OP_HALT:
@@ -291,7 +505,7 @@ chili_status chili_run(chili_vm *vm, uint32_t max_steps)
             int32_t b = POP();
             int32_t x = TOP;
             if (b == 0)
-                return FAIL(op == OP_DIV ? "division par zero" : "modulo par zero");
+                FAIL("%s", op == OP_DIV ? "division par zero" : "modulo par zero");
             if (x == INT32_MIN && b == -1)
                 TOP = (op == OP_DIV) ? INT32_MIN : 0;
             else
@@ -328,7 +542,7 @@ chili_status chili_run(chili_vm *vm, uint32_t max_steps)
             if (enter(vm, rd16(a)) != CHILI_OK) {
                 char msg[sizeof vm->error];
                 memcpy(msg, vm->error, sizeof msg);
-                return FAIL(msg);
+                FAIL("%.80s", msg);
             }
             break;
 
@@ -357,8 +571,53 @@ chili_status chili_run(chili_vm *vm, uint32_t max_steps)
             break;
         }
 
+        case OP_ALLOC: {
+            int32_t h = alloc_object(vm, rd16(a));
+            if (h == 0)
+                FAIL("memoire des objets pleine (%u mots)", (unsigned)CHILI_HEAP_WORDS);
+            PUSH(h);
+            break;
+        }
+
+        case OP_GETF: case OP_SETF: {
+            int32_t val = 0;
+            uint32_t o;
+            if (op == OP_SETF)
+                val = POP();
+            if (!as_object(vm, POP(), &o) || a[0] + 1u >= BLK_SIZE(vm->heap[o]))
+                FAIL("acces a un champ sur une valeur qui n'est pas un objet");
+            if (op == OP_SETF)
+                vm->heap[o + 1 + a[0]] = (uint32_t)val;
+            else
+                PUSH((int32_t)vm->heap[o + 1 + a[0]]);
+            break;
+        }
+
+        case OP_CALLM: {
+            uint16_t sel = rd16(a), fn;
+            uint8_t argc = a[2];
+            uint32_t o;
+            int sel_len, cls_len;
+            const char *sel_name = name_of(vm, sel, &sel_len);
+            if (!as_object(vm, vm->stack[vm->sp - argc - 1], &o))
+                FAIL("appel de %.*s() sur une valeur qui n'est pas un objet", sel_len, sel_name);
+            uint16_t c = (uint16_t)(BLK_CLASS1(vm->heap[o]) - 1);
+            const char *cls_name = name_of(vm, vm->classes[c].name, &cls_len);
+            if (!find_method(vm, c, sel, &fn))
+                FAIL("la classe %.*s n'a pas de methode %.*s", cls_len, cls_name, sel_len, sel_name);
+            if (vm->funcs[fn].num_params != argc + 1u)
+                FAIL("%.*s.%.*s attend %u argument(s), %u fourni(s)", cls_len, cls_name, sel_len, sel_name,
+                     (unsigned)(vm->funcs[fn].num_params - 1), (unsigned)argc);
+            if (enter(vm, fn) != CHILI_OK) {
+                char msg[sizeof vm->error];
+                memcpy(msg, vm->error, sizeof msg);
+                FAIL("%.80s", msg);
+            }
+            break;
+        }
+
         default:
-            return FAIL("opcode inconnu");
+            FAIL("opcode inconnu");
         }
 #undef FAIL
     }

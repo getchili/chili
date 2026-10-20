@@ -5,11 +5,16 @@
   "fileTypes": ["chl"],
   "patterns": [
     { "include": "#comments" },
+    { "include": "#class-declaration" },
     { "include": "#function-declaration" },
+    { "include": "#constructor" },
+    { "include": "#new-expression" },
     { "include": "#keywords" },
     { "include": "#constants" },
     { "include": "#numbers" },
     { "include": "#native-calls" },
+    { "include": "#member-access" },
+    { "include": "#language-variables" },
     { "include": "#calls" },
     { "include": "#operators" },
     { "include": "#punctuation" },
@@ -20,11 +25,33 @@
       "match": "//.*$",
       "name": "comment.line.double-slash.chili"
     },
-    "function-declaration": {
-      "match": "\\b(fn)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+    "class-declaration": {
+      "match": "\\b(?:(abstract)\\s+)?(class)\\s+([A-Za-z_][A-Za-z0-9_]*)(?:\\s+(extends)\\s+([A-Za-z_][A-Za-z0-9_]*))?",
       "captures": {
-        "1": { "name": "storage.type.function.chili" },
-        "2": { "name": "entity.name.function.chili" }
+        "1": { "name": "storage.modifier.abstract.chili" },
+        "2": { "name": "storage.type.class.chili" },
+        "3": { "name": "entity.name.type.class.chili" },
+        "4": { "name": "storage.modifier.extends.chili" },
+        "5": { "name": "entity.other.inherited-class.chili" }
+      }
+    },
+    "function-declaration": {
+      "match": "\\b(?:(abstract)\\s+)?(function)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+      "captures": {
+        "1": { "name": "storage.modifier.abstract.chili" },
+        "2": { "name": "storage.type.function.chili" },
+        "3": { "name": "entity.name.function.chili" }
+      }
+    },
+    "constructor": {
+      "match": "\\b(constructor)\\b",
+      "name": "storage.type.constructor.chili"
+    },
+    "new-expression": {
+      "match": "\\b(new)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+      "captures": {
+        "1": { "name": "keyword.operator.new.chili" },
+        "2": { "name": "entity.name.type.class.chili" }
       }
     },
     "keywords": {
@@ -42,8 +69,24 @@
           "name": "storage.type.chili"
         },
         {
-          "match": "\\b(fn)\\b",
+          "match": "\\b(function)\\b",
           "name": "storage.type.function.chili"
+        },
+        {
+          "match": "\\b(class)\\b",
+          "name": "storage.type.class.chili"
+        },
+        {
+          "match": "\\b(abstract)\\b",
+          "name": "storage.modifier.abstract.chili"
+        },
+        {
+          "match": "\\b(extends)\\b",
+          "name": "storage.modifier.extends.chili"
+        },
+        {
+          "match": "\\b(new)\\b",
+          "name": "keyword.operator.new.chili"
         }
       ]
     },
@@ -61,7 +104,7 @@
     "native-calls": {
       "patterns": [
         {
-          "match": "\\b([A-Za-z_][A-Za-z0-9_]*)\\s*(\\.)\\s*([A-Za-z_][A-Za-z0-9_]*)",
+          "match": "\\b(gpio)\\s*(\\.)\\s*([A-Za-z_][A-Za-z0-9_]*)",
           "captures": {
             "1": { "name": "entity.name.namespace.chili" },
             "2": { "name": "punctuation.accessor.chili" },
@@ -69,10 +112,37 @@
           }
         },
         {
-          "match": "\\b(print|delay|millis|random)\\b",
+          "match": "\\b(print|delay|millis|random)\\b(?=\\s*\\()",
           "name": "support.function.builtin.chili"
         }
       ]
+    },
+    "member-access": {
+      "patterns": [
+        {
+          "comment": "x.m( : appel de méthode (this.m(, super.m(, obj.m()",
+          "match": "\\b(?:(this|super)|([A-Za-z_][A-Za-z0-9_]*))\\s*(\\.)\\s*([A-Za-z_][A-Za-z0-9_]*)(?=\\s*\\()",
+          "captures": {
+            "1": { "name": "variable.language.this.chili" },
+            "2": { "name": "variable.other.object.chili" },
+            "3": { "name": "punctuation.accessor.chili" },
+            "4": { "name": "entity.name.function.member.chili" }
+          }
+        },
+        {
+          "comment": "this.champ : champ privé",
+          "match": "\\b(this|super)\\s*(\\.)\\s*([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": { "name": "variable.language.this.chili" },
+            "2": { "name": "punctuation.accessor.chili" },
+            "3": { "name": "variable.other.property.chili" }
+          }
+        }
+      ]
+    },
+    "language-variables": {
+      "match": "\\b(this|super)\\b",
+      "name": "variable.language.this.chili"
     },
     "calls": {
       "match": "\\b([A-Za-z_][A-Za-z0-9_]*)\\s*(?=\\()",
@@ -93,7 +163,8 @@
     "punctuation": {
       "patterns": [
         { "match": ",", "name": "punctuation.separator.comma.chili" },
-        { "match": ";", "name": "punctuation.terminator.statement.chili" }
+        { "match": ";", "name": "punctuation.terminator.statement.chili" },
+        { "match": "\\.", "name": "punctuation.accessor.chili" }
       ]
     },
     "variables": {

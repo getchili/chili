@@ -16,7 +16,7 @@ import (
 // programme et renvoie ce qu'il a affiché avec print, un appel par ligne.
 func run(t *testing.T, src string) (string, error) {
 	t.Helper()
-	prog, err := Compile([]byte(src))
+	prog, err := Compile([]byte(legacy(src)))
 	if err != nil {
 		t.Fatalf("compilation :\n%v", err)
 	}
@@ -245,6 +245,111 @@ var programTests = []struct {
 			let x = random(0x80000000, 0x7FFFFFFF)
 			print(1)
 		}`, "1 2 7 -3 1"},
+
+	{"classes : polymorphisme et abstract", `
+abstract class Forme {
+    let cote = 0
+    constructor(c) { this.cote = c }
+    abstract function aire()
+    function decrire() { print(this.aire()) }
+}
+class Carre extends Forme {
+    function aire() { return this.cote * this.cote }
+}
+class Triangle extends Forme {
+    let h = 2
+    function aire() { return this.cote * this.h / 2 }
+}
+class Main {
+    function main() {
+        let a = new Carre(5)
+        let b = new Triangle(6)
+        a.decrire()
+        b.decrire()
+        print(a.aire() + b.aire())
+    }
+}`, "25 6 31"},
+
+	{"classes : super, constructeurs hérités et implicites", `
+class A {
+    let x = 1
+    let log = 0
+    constructor() { this.log = this.log * 10 + 1 }
+    function valeur() { return this.x }
+}
+class B extends A {
+    let y = 5
+    constructor(v) { super() ; this.y = v ; this.log = this.log * 10 + 2 }
+    function valeur() { return super.valeur() + this.y }
+    function trace() { return this.log }
+}
+class C extends B {
+    function valeur() { return super.valeur() * 100 }
+}
+class D extends A {
+    constructor() { this.log = this.log * 10 + 3 }
+    function trace() { return this.log }
+}
+class Main {
+    function main() {
+        let c = new C(7)
+        print(c.valeur())
+        print(c.trace())
+        print(new D().trace())
+    }
+}`, "800 12 13"},
+
+	{"classes : champs, objets dans des objets, identité", `
+class Noeud {
+    let valeur
+    let suivant = 0
+    constructor(v, s) { this.valeur = v ; this.suivant = s }
+    function somme() {
+        let total = this.valeur
+        if this.suivant != 0 { total += this.suivant.somme() }
+        return total
+    }
+}
+class Compteur {
+    let n = 0
+    function incr() { this.n += 1 ; return this }
+    function lire() { return this.n }
+}
+class Main {
+    let nom = 42
+    function main() {
+        let liste = new Noeud(1, new Noeud(2, new Noeud(3, 0)))
+        print(liste.somme())
+        print(new Compteur().incr().incr().incr().lire())
+        let a = new Compteur()
+        let b = a
+        print(a == b)
+        print(a == new Compteur())
+        print(this.nom)
+    }
+}`, "6 3 1 0 42"},
+
+	{"classes : beaucoup d'objets (ramasse-miettes)", `
+class Point {
+    let x
+    let y
+    constructor(a, b) { this.x = a ; this.y = b }
+    function somme() { return this.x + this.y }
+}
+class Main {
+    function main() {
+        let garde = new Point(1000, 2000)
+        let total = 0
+        let i = 0
+        while i < 20000 {
+            let p = new Point(i, 1)
+            total += p.somme() % 7
+            i += 1
+        }
+        print(total)
+        print(garde.somme())
+    }
+}`, "59998 3000"},
 }
 
 func TestPrograms(t *testing.T) {
@@ -272,6 +377,10 @@ func TestRuntimeErrors(t *testing.T) {
 		{"modulo par zéro", "fn main() { let z = 0\n print(1 % z) }", "modulo par zéro"},
 		{"récursion infinie", "fn f(n) { return f(n + 1) }\nfn main() { f(0) }", "trop d'appels imbriqués"},
 		{"random à l'envers", "fn main() { print(random(6, 1)) }", "plus petit que le minimum"},
+		{"méthode sur un nombre", "class A { function f() {} }\nclass Main { function main() { let x = 5\n x.f() } }",
+			"appel de f() sur une valeur qui n'est pas un objet"},
+		{"méthode absente de la classe réelle", "class A { function f() {} }\nclass B { function g() {} }\nclass Main { function main() { let o = new B()\n o.f() } }",
+			"la classe B n'a pas de méthode f"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -294,11 +403,13 @@ func TestInfiniteLoopHitsStepLimit(t *testing.T) {
 func TestBlinkBytecode(t *testing.T) {
 	src := `
 let led_pin = 2
-fn main() {
-    gpio.mode(led_pin, 1)
-    while true {
-        gpio.write(led_pin, 1)
-        delay(500)
+class Main {
+    function main() {
+        gpio.mode(led_pin, 1)
+        while true {
+            gpio.write(led_pin, 1)
+            delay(500)
+        }
     }
 }`
 	prog, err := Compile([]byte(src))
@@ -307,9 +418,12 @@ fn main() {
 	}
 	var b strings.Builder
 	bytecode.Disassemble(&b, prog, natives.Name)
-	want := `; 1 globale(s), 2 fonction(s), entrée = <init>, 51 octets de code
+	want := `; 1 globale(s), 3 fonction(s), 1 classe(s), entrée = <init>, 62 octets de code
 
-fn main  ; params=0 locals=0 max_stack=2
+class Main  ; 0 champ(s)
+  main           -> Main.main
+
+function Main.main  ; params=1 locals=1 max_stack=2
   0000  GLOAD       0
   0003  PUSH8       1
   0005  CALL_NATIVE gpio.mode/2
@@ -327,12 +441,19 @@ fn main  ; params=0 locals=0 max_stack=2
   0026  PUSH8       0
   0028  RET
 
-fn <init>  ; params=0 locals=0 max_stack=1
-  0029  PUSH8       2
-  002b  GSTORE      0
-  002e  CALL        main
-  0031  POP
-  0032  HALT
+function Main.new  ; params=0 locals=1 max_stack=1
+  0029  ALLOC       Main
+  002c  STORE       0
+  002e  LOAD        0
+  0030  RET
+
+function <init>  ; params=0 locals=0 max_stack=1
+  0031  PUSH8       2
+  0033  GSTORE      0
+  0036  CALL        Main.new
+  0039  CALL        Main.main
+  003c  POP
+  003d  HALT
 `
 	if got := b.String(); got != want {
 		t.Errorf("désassemblage :\n%s\nattendu :\n%s", got, want)
@@ -340,7 +461,7 @@ fn <init>  ; params=0 locals=0 max_stack=1
 }
 
 func TestDecodeRejectsCorruption(t *testing.T) {
-	prog, err := Compile([]byte("fn main() { print(1) }"))
+	prog, err := Compile([]byte(legacy("fn main() { print(1) }")))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -8,6 +8,7 @@ package refvm
 import (
 	"errors"
 	"fmt"
+	"sort"
 
 	"github.com/getchili/chili/compiler/bytecode"
 )
@@ -51,6 +52,31 @@ type VM struct {
 	frames    []frame
 	MaxFrames int
 	MaxSteps  int // 0 = illimité
+
+	objects []*object // objets créés (pas de ramasse-miettes : la mémoire du PC suffit)
+}
+
+// object est un objet Chili. Sa valeur (handle) vaut handleTag | (index + 1).
+type object struct {
+	class  int
+	fields []int32
+}
+
+const handleTag = 0x4F000000
+
+func (vm *VM) objectOf(v int32) (*object, bool) {
+	if uint32(v)&0xFF000000 != handleTag {
+		return nil, false
+	}
+	i := int(uint32(v)&0xFFFFFF) - 1
+	if i < 0 || i >= len(vm.objects) {
+		return nil, false
+	}
+	return vm.objects[i], true
+}
+
+func (vm *VM) className(c int) string {
+	return vm.prog.Name(int(vm.prog.Classes[c].NameIdx))
 }
 
 // New prépare une VM pour prog (déjà vérifié par bytecode.Verify).
@@ -172,6 +198,52 @@ func (vm *VM) Run() error {
 				return fail("native %d : %v", id, err)
 			}
 			vm.push(r)
+
+		case bytecode.ALLOC:
+			c := int(bytecode.ReadOperand(code, pc+1, bytecode.U16))
+			if len(vm.objects) >= 0xFFFFFE {
+				return fail("mémoire des objets pleine")
+			}
+			vm.objects = append(vm.objects, &object{class: c, fields: make([]int32, vm.prog.Classes[c].NumFields)})
+			vm.push(int32(handleTag | uint32(len(vm.objects))))
+
+		case bytecode.GETF, bytecode.SETF:
+			idx := int(code[pc+1])
+			var val int32
+			if op == bytecode.SETF {
+				val = vm.pop()
+			}
+			obj, ok := vm.objectOf(vm.pop())
+			if !ok || idx >= len(obj.fields) {
+				return fail("accès à un champ sur une valeur qui n'est pas un objet")
+			}
+			if op == bytecode.SETF {
+				obj.fields[idx] = val
+			} else {
+				vm.push(obj.fields[idx])
+			}
+
+		case bytecode.CALLM:
+			sel := uint16(bytecode.ReadOperand(code, pc+1, bytecode.U16))
+			argc := int(code[pc+3])
+			name := vm.prog.Name(int(sel))
+			obj, ok := vm.objectOf(vm.stack[vm.sp-argc-1])
+			if !ok {
+				return fail("appel de %s() sur une valeur qui n'est pas un objet", name)
+			}
+			methods := vm.prog.Classes[obj.class].Methods
+			i := sort.Search(len(methods), func(i int) bool { return methods[i].Selector >= sel })
+			if i == len(methods) || methods[i].Selector != sel {
+				return fail("la classe %s n'a pas de méthode %s", vm.className(obj.class), name)
+			}
+			fn := int(methods[i].Fn)
+			if int(vm.prog.Funcs[fn].NumParams) != argc+1 {
+				return fail("%s.%s attend %d argument(s), %d fourni(s)", vm.className(obj.class), name,
+					vm.prog.Funcs[fn].NumParams-1, argc)
+			}
+			if err := vm.enter(fn); err != nil {
+				return fail("%v", err)
+			}
 
 		case bytecode.RET:
 			r := vm.pop()

@@ -70,7 +70,7 @@ Source: "..\chili.exe"; DestDir: "{app}\bin"; Flags: ignoreversion
 Source: "..\editors\windows\chili.ico"; DestDir: "{app}\icons"; Flags: ignoreversion
 Source: "..\editors\windows\chili-bytecode.ico"; DestDir: "{app}\icons"; Flags: ignoreversion
 Source: "..\examples\*.chl"; DestDir: "{app}\examples"; Flags: ignoreversion
-Source: "..\editors\vscode\chili-lang-0.1.0.vsix"; DestDir: "{tmp}"; Flags: deleteafterinstall; Tasks: vscode
+Source: "..\editors\vscode\chili-lang-0.2.0.vsix"; DestDir: "{tmp}"; Flags: deleteafterinstall; Tasks: vscode
 
 [Registry]
 ; PATH de l'utilisateur
@@ -86,7 +86,7 @@ Root: HKCU; Subkey: "Software\Classes\Chili.Bytecode"; ValueType: string; ValueD
 Root: HKCU; Subkey: "Software\Classes\Chili.Bytecode\DefaultIcon"; ValueType: string; ValueData: """{app}\icons\chili-bytecode.ico"",0"; Tasks: associate
 
 [Run]
-Filename: "{cmd}"; Parameters: "/c """"{code:VSCodeCli}"" --install-extension ""{tmp}\chili-lang-0.1.0.vsix"" --force"""; \
+Filename: "{cmd}"; Parameters: "/c """"{code:VSCodeCli}"" --install-extension ""{tmp}\chili-lang-0.2.0.vsix"" --force"""; \
   StatusMsg: "{cm:InstallingVSCode}"; Flags: runhidden waituntilterminated; Tasks: vscode
 
 [Code]

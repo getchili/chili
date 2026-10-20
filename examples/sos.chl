@@ -4,7 +4,7 @@
 let led = 2
 let unite = 200 // durée d'un point, en millisecondes
 
-fn signal(duree) {
+function signal(duree) {
     gpio.write(led, 1)
     delay(duree)
     gpio.write(led, 0)
@@ -12,7 +12,7 @@ fn signal(duree) {
 }
 
 // Envoie n fois le même signal, puis le silence de fin de lettre.
-fn lettre(n, duree) {
+function lettre(n, duree) {
     let i = 0
     while i < n {
         signal(duree)
@@ -21,12 +21,14 @@ fn lettre(n, duree) {
     delay(unite * 2)
 }
 
-fn main() {
-    gpio.mode(led, 1)
-    while true {
-        lettre(3, unite)     // S : . . .
-        lettre(3, unite * 3) // O : - - -
-        lettre(3, unite)     // S : . . .
-        delay(unite * 4)     // pause entre deux SOS
+class Main {
+    function main() {
+        gpio.mode(led, 1)
+        while true {
+            lettre(3, unite)     // S : . . .
+            lettre(3, unite * 3) // O : - - -
+            lettre(3, unite)     // S : . . .
+            delay(unite * 4)     // pause entre deux SOS
+        }
     }
 }

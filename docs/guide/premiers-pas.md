@@ -58,17 +58,19 @@ chili flash
 ```
 
 ```
-Installation du firmware Chili 0.1.3 sur COM4.
+Installation du firmware Chili 0.2.0 sur COM4.
 Ne débranche pas la carte pendant l'opération.
 
   [##############################] 100 %  firmware.bin
 
 Firmware écrit et vérifié en 28 s. Redémarrage de la carte…
-Firmware Chili 0.1.3 opérationnel sur ESP32-D0WD-V3.
+Firmware Chili 0.2.0 opérationnel sur ESP32-D0WD-V3.
 
 Envoie ton premier programme :
   chili push examples\blink.chl COM4
 ```
+
+> Ta carte a déjà un firmware Chili plus ancien (avant 0.2.0) ? Relance aussi `chili flash` : les programmes écrits avec la syntaxe actuelle (`class Main`, `function`) ne tournent pas sur un ancien firmware.
 
 Si le message dit que la carte « ne passe pas en mode programmation automatiquement » :
 
@@ -96,7 +98,7 @@ chili push blink.chl
 ```
 
 ```
-Envoi de blink.chl (111 octets) vers COM4… ok (180 ms)
+Envoi de blink.chl (188 octets) vers COM4… ok (180 ms)
 Programme enregistré sur la carte et lancé. Il redémarrera tout seul à chaque mise sous tension.
 Sortie de la carte — Ctrl+C pour quitter (le programme continue de tourner).
 ```
@@ -129,6 +131,8 @@ La LED clignote plus vite. C'est tout : pas de recompilation du firmware, l'envo
 | `bouton.chl`   | allume la LED tant qu'on appuie sur le bouton **BOOT** (GPIO 0)   |
 | `compteur.chl` | compte les appuis sur BOOT et affiche le total avec `print`       |
 | `sos.chl`      | « SOS » en morse sur la LED, avec des fonctions                   |
+| `de.chl`       | dé électronique : un appui sur BOOT, la LED clignote de 1 à 6 fois (`random`) |
+| `motifs.chl`   | plusieurs motifs de clignotement tirés au hasard, écrits avec des [classes](classes.md) |
 | `fib.chl`      | calcule la suite de Fibonacci et mesure le temps de calcul        |
 
 Essaie par exemple :

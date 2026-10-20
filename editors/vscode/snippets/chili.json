@@ -1,0 +1,107 @@
+{
+  "Programme (classe Main)": {
+    "prefix": "main",
+    "description": "Squelette d'un programme : class Main avec sa méthode main()",
+    "body": [
+      "class Main {",
+      "\tfunction main() {",
+      "\t\t$0",
+      "\t}",
+      "}"
+    ]
+  },
+  "Classe": {
+    "prefix": "class",
+    "description": "Classe avec un champ, un constructeur et une méthode",
+    "body": [
+      "class ${1:Nom} {",
+      "\tlet ${2:valeur} = ${3:0}",
+      "",
+      "\tconstructor(${4:v}) {",
+      "\t\tthis.$2 = $4",
+      "\t}",
+      "",
+      "\tfunction ${5:methode}() {",
+      "\t\t${0:return this.$2}",
+      "\t}",
+      "}"
+    ]
+  },
+  "Classe abstraite": {
+    "prefix": "abstract",
+    "description": "Classe abstraite avec une méthode abstraite (sans corps) et une méthode normale",
+    "body": [
+      "abstract class ${1:Nom} {",
+      "\tabstract function ${2:action}()",
+      "",
+      "\tfunction ${3:lancer}() {",
+      "\t\t${0:this.$2()}",
+      "\t}",
+      "}"
+    ]
+  },
+  "Classe fille": {
+    "prefix": "extends",
+    "description": "Classe qui hérite d'une autre : appel de super(...) et redéfinition d'une méthode",
+    "body": [
+      "class ${1:Fille} extends ${2:Parent} {",
+      "\tconstructor(${3:v}) {",
+      "\t\tsuper($3)",
+      "\t}",
+      "",
+      "\tfunction ${4:methode}() {",
+      "\t\t${0:return super.$4()}",
+      "\t}",
+      "}"
+    ]
+  },
+  "Fonction": {
+    "prefix": "function",
+    "description": "Fonction (ou méthode dans une classe)",
+    "body": [
+      "function ${1:nom}(${2}) {",
+      "\t$0",
+      "}"
+    ]
+  },
+  "Boucle while": {
+    "prefix": "while",
+    "description": "Répète tant que la condition est vraie",
+    "body": [
+      "while ${1:condition} {",
+      "\t$0",
+      "}"
+    ]
+  },
+  "Condition if": {
+    "prefix": "if",
+    "description": "Exécute le bloc si la condition est vraie",
+    "body": [
+      "if ${1:condition} {",
+      "\t$0",
+      "}"
+    ]
+  },
+  "Condition if / else": {
+    "prefix": "ifelse",
+    "description": "Un bloc si la condition est vraie, un autre sinon",
+    "body": [
+      "if ${1:condition} {",
+      "\t$2",
+      "} else {",
+      "\t$0",
+      "}"
+    ]
+  },
+  "Boucle compteur": {
+    "prefix": "for",
+    "description": "Boucle de 0 à n-1 avec un compteur (while)",
+    "body": [
+      "let ${1:i} = 0",
+      "while $1 < ${2:10} {",
+      "\t$0",
+      "\t$1 += 1",
+      "}"
+    ]
+  }
+}

@@ -7,14 +7,16 @@ Les fonctions natives sont fournies par la carte. On les appelle comme n'importe
 | `print(v)`           | un nombre          | 0                  | affiche le nombre sur une ligne                |
 | `delay(ms)`          | millisecondes      | 0                  | attend `ms` millisecondes                      |
 | `millis()`           | aucun              | millisecondes      | temps écoulé depuis le démarrage de la carte   |
+| `random(min, max)`   | deux bornes        | un nombre          | nombre au hasard entre `min` et `max` inclus   |
 | `gpio.mode(p, m)`    | broche, mode (0-3) | 0                  | règle une broche en entrée ou en sortie        |
 | `gpio.write(p, v)`   | broche, valeur     | 0                  | met une sortie à 1 (3,3 V) ou à 0 (0 V)        |
 | `gpio.read(p)`       | broche             | 0 ou 1             | lit l'état d'une broche                        |
-| `random(min, max)`   | deux nombres       | un nombre          | tire un nombre au hasard entre `min` et `max`  |
+
+Les extraits ci-dessous se placent dans `function main()` (ou dans une autre fonction). Les exemples complets commencent par `let` ou `class`.
 
 ## `print(v)`
 
-Affiche un nombre entier, suivi d'un retour à la ligne. La sortie apparaît dans le terminal pendant `chili push`, ou avec `chili monitor`.
+Affiche un nombre entier, suivi d'un retour à la ligne. La sortie apparaît dans le terminal pendant `chili push`, avec `chili monitor`, ou dans la console de Chili Lab.
 
 ```chili
 print(42)
@@ -62,19 +64,17 @@ Le compteur dépasse la limite des entiers 32 bits au bout d'environ 24 jours et
 
 ## `random(min, max)`
 
-Renvoie un nombre entier tiré au hasard entre `min` et `max`, **bornes comprises**.
+Renvoie un nombre entier tiré au hasard entre `min` et `max`, **bornes comprises**. Sur l'ESP32, le hasard vient d'un générateur matériel : chaque démarrage donne une suite différente.
 
 ```chili
-let de = random(1, 6)       // comme un dé : 1, 2, 3, 4, 5 ou 6
-let pile = random(0, 1)     // 0 ou 1
-delay(random(200, 800))     // une pause de durée imprévisible
+let de = random(1, 6)     // 1, 2, 3, 4, 5 ou 6
+let pile = random(0, 1)   // 0 ou 1
+delay(random(100, 500))   // attente variable
 ```
 
-Sur l'ESP32, le hasard vient du **générateur matériel** de la puce : c'est du vrai aléatoire, il n'y a pas de graine à choisir, et chaque démarrage donne une suite différente. Sur le PC (`chili run`), il vient du système.
+Si `max` est plus petit que `min`, le programme s'arrête avec l'erreur `random : le maximum (1) est plus petit que le minimum (6)`.
 
-Si `max` est plus petit que `min`, le programme s'arrête avec une erreur : `random : le maximum (1) est plus petit que le minimum (6)`.
-
-> `random` demande le firmware **0.1.4** ou plus récent. Avec un firmware plus ancien, l'envoi est refusé et Chili propose de le mettre à jour (`chili flash`, ou le bandeau orange de Chili Lab).
+L'exemple `de.chl` est un dé électronique : à chaque appui sur BOOT, la LED clignote de 1 à 6 fois.
 
 ## Broches GPIO
 
@@ -120,13 +120,15 @@ Brancher une LED externe : broche **GPIO 4** → résistance 220 Ω → patte lo
 ```chili
 let led = 4
 
-fn main() {
-    gpio.mode(led, 1)       // sortie
-    while true {
-        gpio.write(led, 1)  // allumée
-        delay(200)
-        gpio.write(led, 0)  // éteinte
-        delay(800)
+class Main {
+    function main() {
+        gpio.mode(led, 1)       // sortie
+        while true {
+            gpio.write(led, 1)  // allumée
+            delay(200)
+            gpio.write(led, 0)  // éteinte
+            delay(800)
+        }
     }
 }
 ```
@@ -139,17 +141,19 @@ Le bouton **BOOT** de la carte est déjà branché sur la broche 0, entre la bro
 let bouton = 0
 let led = 2
 
-fn main() {
-    gpio.mode(bouton, 2) // entrée avec pull-up
-    gpio.mode(led, 1)    // sortie
+class Main {
+    function main() {
+        gpio.mode(bouton, 2) // entrée avec pull-up
+        gpio.mode(led, 1)    // sortie
 
-    while true {
-        if gpio.read(bouton) == 0 {
-            gpio.write(led, 1)
-        } else {
-            gpio.write(led, 0)
+        while true {
+            if gpio.read(bouton) == 0 {
+                gpio.write(led, 1)
+            } else {
+                gpio.write(led, 0)
+            }
+            delay(10) // 100 lectures par seconde suffisent
         }
-        delay(10) // 100 lectures par seconde suffisent
     }
 }
 ```
@@ -163,20 +167,22 @@ Pour détecter **un appui** (et pas « tant que le bouton est enfoncé »), on c
 ```chili
 let bouton = 0
 
-fn main() {
-    gpio.mode(bouton, 2)
+class Main {
+    function main() {
+        gpio.mode(bouton, 2)
 
-    let appuis = 0
-    let avant = 1 // état précédent du bouton
+        let appuis = 0
+        let avant = 1 // état précédent du bouton
 
-    while true {
-        let etat = gpio.read(bouton)
-        if avant == 1 && etat == 0 {
-            appuis += 1
-            print(appuis)
+        while true {
+            let etat = gpio.read(bouton)
+            if avant == 1 && etat == 0 {
+                appuis += 1
+                print(appuis)
+            }
+            avant = etat
+            delay(20) // évite de compter les rebonds du bouton
         }
-        avant = etat
-        delay(20) // évite de compter les rebonds du bouton
     }
 }
 ```

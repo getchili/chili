@@ -4,20 +4,22 @@
 
 let bouton = 0
 
-fn main() {
-    gpio.mode(bouton, 2) // entrée avec pull-up : 1 = relâché, 0 = appuyé
+class Main {
+    function main() {
+        gpio.mode(bouton, 2) // entrée avec pull-up : 1 = relâché, 0 = appuyé
 
-    let appuis = 0
-    let avant = 1 // état précédent du bouton
+        let appuis = 0
+        let avant = 1 // état précédent du bouton
 
-    while true {
-        // Un appui = passage de 1 (relâché) à 0 (appuyé).
-        let etat = gpio.read(bouton)
-        if avant == 1 && etat == 0 {
-            appuis += 1
-            print(appuis)
+        while true {
+            // Un appui = passage de 1 (relâché) à 0 (appuyé).
+            let etat = gpio.read(bouton)
+            if avant == 1 && etat == 0 {
+                appuis += 1
+                print(appuis)
+            }
+            avant = etat
+            delay(20) // évite de compter les rebonds du bouton
         }
-        avant = etat
-        delay(20) // évite de compter les rebonds du bouton
     }
 }

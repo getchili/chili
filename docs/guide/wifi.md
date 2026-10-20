@@ -54,7 +54,7 @@ chili push blink.chl chili-a1b2c3.local
 ```
 
 ```
-Envoi de blink.chl (111 octets) vers 192.168.1.42… ok (95 ms)
+Envoi de blink.chl (188 octets) vers 192.168.1.42… ok (95 ms)
 Programme enregistré sur la carte et lancé. Il redémarrera tout seul à chaque mise sous tension.
 Sortie de la carte — Ctrl+C pour quitter (le programme continue de tourner).
 ```

@@ -23,7 +23,11 @@ func TestTokens(t *testing.T) {
 	}{
 		{"", "EOF"},
 		{"let x = 42", "let IDENT(x) = INT(42) ; EOF"},
-		{"fn main() {}", "fn IDENT(main) ( ) { } ; EOF"},
+		{"function main() {}", "function IDENT(main) ( ) { } ; EOF"},
+		{"abstract class A extends B { constructor() { super(1) } }",
+			"abstract class IDENT(A) extends IDENT(B) { constructor ( ) { super ( INT(1) ) } } ; EOF"},
+		{"let o = new A()\nthis.x = 1\nthis\nsuper\n",
+			"let IDENT(o) = new IDENT(A) ( ) ; this . IDENT(x) = INT(1) ; this ; super ; EOF"},
 		{"a+=b-=c*=d/=e%=f", "IDENT(a) += IDENT(b) -= IDENT(c) *= IDENT(d) /= IDENT(e) %= IDENT(f) ; EOF"},
 		{"a && b || !c", "IDENT(a) && IDENT(b) || ! IDENT(c) ; EOF"},
 		{"a & b | c ^ ~d", "IDENT(a) & IDENT(b) | IDENT(c) ^ ~ IDENT(d) ; EOF"},

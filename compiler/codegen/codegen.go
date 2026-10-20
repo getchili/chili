@@ -1,11 +1,12 @@
 // Package codegen traduit un programme vérifié par sema en bytecode
-// (cf. docs/bytecode.md).
+// (cf. docs/bytecode.md et docs/classes.md).
 package codegen
 
 import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"sort"
 
 	"github.com/getchili/chili/compiler/ast"
 	"github.com/getchili/chili/compiler/bytecode"
@@ -30,6 +31,10 @@ type gen struct {
 	info *sema.Info
 	code []byte
 
+	names   []string
+	nameIdx map[string]int
+	newFn   map[*sema.ClassInfo]int // fonction synthétique « new » de chaque classe concrète
+
 	// État de la fonction en cours.
 	depth, maxDepth int
 	loops           []*loop
@@ -41,8 +46,12 @@ type bailout struct{ err *Error }
 
 // Generate produit le programme bytecode. info doit venir d'un sema.Check
 // sans erreur.
+//
+// Ordre des fonctions : celles de sema (fonctions globales, méthodes,
+// constructeurs), puis une fonction « Classe.new » par classe concrète,
+// puis <init> (point d'entrée).
 func Generate(info *sema.Info) (prog *bytecode.Program, err error) {
-	g := &gen{info: info}
+	g := &gen{info: info, nameIdx: map[string]int{}, newFn: map[*sema.ClassInfo]int{}}
 	defer func() {
 		if r := recover(); r != nil {
 			b, ok := r.(bailout)
@@ -53,18 +62,69 @@ func Generate(info *sema.Info) (prog *bytecode.Program, err error) {
 		}
 	}()
 
+	next := len(info.Funcs)
+	for _, ci := range info.Classes {
+		if !ci.Abstract {
+			g.newFn[ci] = next
+			next++
+		}
+	}
+
 	prog = &bytecode.Program{NumGlobals: uint16(len(info.Globals))}
 	for _, fi := range info.Funcs {
 		prog.Funcs = append(prog.Funcs, g.genFunc(fi))
 	}
+	for _, ci := range info.Classes {
+		if !ci.Abstract {
+			prog.Funcs = append(prog.Funcs, g.genNew(ci))
+		}
+	}
 	prog.Entry = uint16(len(prog.Funcs))
 	prog.Funcs = append(prog.Funcs, g.genInit())
+
+	for _, ci := range info.Classes {
+		prog.Classes = append(prog.Classes, g.classEntry(ci))
+	}
+	if len(g.names) > math.MaxUint16 {
+		g.fail(token.Pos{Line: 1, Col: 1}, "trop de noms (max %d)", math.MaxUint16)
+	}
+	prog.Names = g.names
 	prog.Code = g.code
 	return prog, nil
 }
 
 func (g *gen) fail(pos token.Pos, format string, args ...any) {
 	panic(bailout{&Error{Pos: pos, Msg: fmt.Sprintf(format, args...)}})
+}
+
+// name renvoie l'index de s dans la table des noms (ajouté au besoin).
+func (g *gen) name(s string) int {
+	if i, ok := g.nameIdx[s]; ok {
+		return i
+	}
+	if len(s) > 255 {
+		s = s[:255]
+	}
+	g.nameIdx[s] = len(g.names)
+	g.names = append(g.names, s)
+	return len(g.names) - 1
+}
+
+func (g *gen) classEntry(ci *sema.ClassInfo) bytecode.Class {
+	c := bytecode.Class{
+		NameIdx:   uint16(g.name(ci.Name)),
+		Parent:    bytecode.NoParent,
+		NumFields: uint8(len(ci.Fields)),
+		Abstract:  ci.Abstract,
+	}
+	if ci.Parent != nil {
+		c.Parent = uint16(ci.Parent.Index)
+	}
+	for _, m := range ci.SortedMethods() {
+		c.Methods = append(c.Methods, bytecode.Method{Selector: uint16(g.name(m.Name)), Fn: uint16(m.Func.Index)})
+	}
+	sort.Slice(c.Methods, func(i, j int) bool { return c.Methods[i].Selector < c.Methods[j].Selector })
+	return c
 }
 
 // ---------------------------------------------------------------------------
@@ -122,6 +182,11 @@ func (g *gen) jumpTo(op bytecode.Op, target int) {
 	g.patch(g.jump(op), target)
 }
 
+func (g *gen) call(fn, nargs int) {
+	g.op(bytecode.CALL, 1-nargs)
+	g.u16(fn)
+}
+
 // ---------------------------------------------------------------------------
 // Fonctions
 
@@ -136,6 +201,7 @@ func (g *gen) endFunc(name string, start, params, locals int) bytecode.Func {
 	}
 	return bytecode.Func{
 		Name:      name,
+		NameIdx:   uint16(g.name(name)),
 		Offset:    uint32(start),
 		NumParams: uint8(params),
 		NumLocals: uint8(locals),
@@ -144,16 +210,61 @@ func (g *gen) endFunc(name string, start, params, locals int) bytecode.Func {
 }
 
 func (g *gen) genFunc(fi *sema.FuncInfo) bytecode.Func {
-	d := fi.Decl
-	start := g.beginFunc(d.Pos())
-	g.stmts(d.Body.Stmts)
+	start := g.beginFunc(fi.Pos)
+	if fi.ImplicitSuper != nil {
+		g.op(bytecode.LOAD, +1) // this
+		g.u8(0)
+		g.call(fi.ImplicitSuper.Index, 1)
+		g.op(bytecode.POP, -1)
+	}
+	g.stmts(fi.Body.Stmts)
 	// Retour implicite (inatteignable si la fonction finit par un return).
 	g.pushConst(0)
 	g.op(bytecode.RET, -1)
-	return g.endFunc(d.Name.Name, start, len(d.Params), fi.NumLocals)
+	return g.endFunc(fi.Name, start, fi.NumParams(), fi.NumLocals)
 }
 
-// genInit produit <init> : globales, appel de main, HALT.
+// genNew produit « Classe.new(args) » : crée l'objet, initialise ses champs
+// (classes parentes d'abord), appelle le constructeur et renvoie l'objet.
+func (g *gen) genNew(ci *sema.ClassInfo) bytecode.Func {
+	start := g.beginFunc(ci.Decl.Pos())
+	n := 0
+	if ci.EffCtor != nil {
+		n = len(ci.EffCtor.Params)
+	}
+	obj := n // slot de l'objet, après les paramètres
+
+	g.op(bytecode.ALLOC, +1)
+	g.u16(ci.Index)
+	g.op(bytecode.STORE, -1)
+	g.u8(obj)
+	for _, f := range ci.Fields {
+		if f.Decl.Value == nil {
+			continue // ALLOC met déjà les champs à 0
+		}
+		g.op(bytecode.LOAD, +1)
+		g.u8(obj)
+		g.expr(f.Decl.Value)
+		g.op(bytecode.SETF, -2)
+		g.u8(f.Index)
+	}
+	if ci.EffCtor != nil {
+		g.op(bytecode.LOAD, +1)
+		g.u8(obj)
+		for i := 0; i < n; i++ {
+			g.op(bytecode.LOAD, +1)
+			g.u8(i)
+		}
+		g.call(ci.EffCtor.Index, n+1)
+		g.op(bytecode.POP, -1)
+	}
+	g.op(bytecode.LOAD, +1)
+	g.u8(obj)
+	g.op(bytecode.RET, -1)
+	return g.endFunc(ci.Name+".new", start, n, n+1)
+}
+
+// genInit produit <init> : globales, new Main(), main(), HALT.
 func (g *gen) genInit() bytecode.Func {
 	start := g.beginFunc(token.Pos{Line: 1, Col: 1})
 	for i, ls := range g.info.Globals {
@@ -161,8 +272,8 @@ func (g *gen) genInit() bytecode.Func {
 		g.op(bytecode.GSTORE, -1)
 		g.u16(i)
 	}
-	g.op(bytecode.CALL, +1)
-	g.u16(g.info.Main.Index)
+	g.call(g.newFn[g.info.MainClass], 0)
+	g.call(g.info.MainMethod.Index, 1)
 	g.op(bytecode.POP, -1)
 	g.op(bytecode.HALT, 0)
 	return g.endFunc("<init>", start, 0, 0)
@@ -184,14 +295,7 @@ func (g *gen) stmt(s ast.Stmt) {
 		g.store(s.Name)
 
 	case *ast.AssignStmt:
-		if s.Op == token.ASSIGN {
-			g.expr(s.Value)
-		} else {
-			g.load(s.Target)
-			g.expr(s.Value)
-			g.op(compoundOps[s.Op], -1)
-		}
-		g.store(s.Target)
+		g.assign(s)
 
 	case *ast.ExprStmt:
 		g.expr(s.X)
@@ -256,6 +360,43 @@ var compoundOps = map[token.Kind]bytecode.Op{
 	token.MOD_ASSIGN: bytecode.MOD,
 }
 
+func (g *gen) assign(s *ast.AssignStmt) {
+	switch t := s.Target.(type) {
+	case *ast.Ident:
+		if s.Op == token.ASSIGN {
+			g.expr(s.Value)
+		} else {
+			g.load(t)
+			g.expr(s.Value)
+			g.op(compoundOps[s.Op], -1)
+		}
+		g.store(t)
+
+	case *ast.FieldExpr:
+		idx := g.info.Fields[t].Index
+		g.loadThis()
+		if s.Op == token.ASSIGN {
+			g.expr(s.Value)
+		} else {
+			g.loadThis()
+			g.op(bytecode.GETF, 0)
+			g.u8(idx)
+			g.expr(s.Value)
+			g.op(compoundOps[s.Op], -1)
+		}
+		g.op(bytecode.SETF, -2)
+		g.u8(idx)
+
+	default:
+		panic(fmt.Sprintf("codegen: affectation de %T", t))
+	}
+}
+
+func (g *gen) loadThis() {
+	g.op(bytecode.LOAD, +1)
+	g.u8(0)
+}
+
 func (g *gen) load(id *ast.Ident) {
 	sym := g.info.Refs[id]
 	if sym.Kind == sema.Local {
@@ -306,6 +447,12 @@ var unaryOps = map[token.Kind]bytecode.Op{
 	token.TILDE: bytecode.BNOT,
 }
 
+func (g *gen) args(args []ast.Expr) {
+	for _, a := range args {
+		g.expr(a)
+	}
+}
+
 func (g *gen) expr(e ast.Expr) {
 	switch e := e.(type) {
 	case *ast.IntLit:
@@ -343,9 +490,7 @@ func (g *gen) expr(e ast.Expr) {
 		}
 
 	case *ast.CallExpr:
-		for _, a := range e.Args {
-			g.expr(a)
-		}
+		g.args(e.Args)
 		sym := g.info.Calls[e]
 		n := len(e.Args)
 		if sym.Kind == sema.Native {
@@ -353,9 +498,42 @@ func (g *gen) expr(e ast.Expr) {
 			g.u16(sym.Index)
 			g.u8(n)
 		} else {
-			g.op(bytecode.CALL, 1-n)
-			g.u16(sym.Index)
+			g.call(sym.Index, n)
 		}
+
+	case *ast.ThisExpr:
+		g.loadThis()
+
+	case *ast.FieldExpr:
+		g.loadThis()
+		g.op(bytecode.GETF, 0)
+		g.u8(g.info.Fields[e].Index)
+
+	case *ast.NewExpr:
+		g.args(e.Args)
+		g.call(g.newFn[g.info.News[e]], len(e.Args))
+
+	case *ast.MethodCall:
+		g.expr(e.Recv)
+		g.args(e.Args)
+		g.op(bytecode.CALLM, -len(e.Args))
+		g.u16(g.name(e.Name.Name))
+		g.u8(len(e.Args))
+
+	case *ast.SuperCall:
+		fn := g.info.SuperCalls[e]
+		if fn == nil { // la classe parente n'a pas de constructeur : rien à faire
+			g.pushConst(0)
+			return
+		}
+		g.loadThis()
+		g.args(e.Args)
+		g.call(fn.Index, len(e.Args)+1)
+
+	case *ast.SuperMethodCall:
+		g.loadThis()
+		g.args(e.Args)
+		g.call(g.info.SuperMethods[e].Index, len(e.Args)+1)
 
 	default:
 		panic(fmt.Sprintf("codegen: expression inconnue %T", e))

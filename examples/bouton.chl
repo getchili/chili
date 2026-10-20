@@ -7,16 +7,18 @@
 let bouton = 0
 let led = 2
 
-fn main() {
-    gpio.mode(bouton, 2) // entrée avec pull-up
-    gpio.mode(led, 1)    // sortie
+class Main {
+    function main() {
+        gpio.mode(bouton, 2) // entrée avec pull-up
+        gpio.mode(led, 1)    // sortie
 
-    while true {
-        if gpio.read(bouton) == 0 {
-            gpio.write(led, 1)
-        } else {
-            gpio.write(led, 0)
+        while true {
+            if gpio.read(bouton) == 0 {
+                gpio.write(led, 1)
+            } else {
+                gpio.write(led, 0)
+            }
+            delay(10) // 100 lectures par seconde suffisent
         }
-        delay(10) // 100 lectures par seconde suffisent
     }
 }

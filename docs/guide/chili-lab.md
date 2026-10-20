@@ -27,7 +27,7 @@ Une seule copie de Chili Lab tourne à la fois : le relancer ouvre simplement un
 | **Programme**    | état du programme (en cours, en pause, arrêté, terminé, erreur) et boutons **Lancer**, **Pause**, **Kill**, **Effacer** |
 | **Programmes**   | tes fichiers `.chl`, avec **Vérifier** (sans envoyer) et **Envoyer** (voir ci-dessous) |
 | **Console**      | la sortie de la carte en direct (`print`, erreurs), avec **Défilement auto** et **Effacer** |
-| **Firmware**     | **Installer Chili sur la carte** pour une carte neuve, **Mettre à jour** quand une nouvelle version est incluse |
+| **Firmware**     | **Installer Chili sur la carte** pour une carte neuve ; un **bandeau orange** propose **Mettre à jour** quand le firmware de la carte est trop ancien (obligatoire avant 0.2.0 pour la syntaxe actuelle) |
 | **WiFi**         | **Connecter au WiFi** : nom du réseau et mot de passe                              |
 
 Le bas de la barre latérale affiche la version (`Chili Lab 0.1.0`).
