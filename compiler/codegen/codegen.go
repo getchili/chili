@@ -23,7 +23,8 @@ type Error struct {
 func (e *Error) Error() string { return fmt.Sprintf("%s: %s", e.Pos, e.Msg) }
 
 type loop struct {
-	start  int   // début de la condition (cible de continue)
+	cont   int   // cible de continue (-1 : pas encore connue)
+	conts  []int // continue émis avant que la cible soit connue
 	breaks []int // positions des opérandes de saut à corriger
 }
 
@@ -33,6 +34,8 @@ type gen struct {
 
 	names   []string
 	nameIdx map[string]int
+	strs    []string
+	strIdx  map[string]int
 	newFn   map[*sema.ClassInfo]int // fonction synthétique « new » de chaque classe concrète
 
 	// État de la fonction en cours.
@@ -51,7 +54,7 @@ type bailout struct{ err *Error }
 // constructeurs), puis une fonction « Classe.new » par classe concrète,
 // puis <init> (point d'entrée).
 func Generate(info *sema.Info) (prog *bytecode.Program, err error) {
-	g := &gen{info: info, nameIdx: map[string]int{}, newFn: map[*sema.ClassInfo]int{}}
+	g := &gen{info: info, nameIdx: map[string]int{}, strIdx: map[string]int{}, newFn: map[*sema.ClassInfo]int{}}
 	defer func() {
 		if r := recover(); r != nil {
 			b, ok := r.(bailout)
@@ -89,6 +92,10 @@ func Generate(info *sema.Info) (prog *bytecode.Program, err error) {
 		g.fail(token.Pos{Line: 1, Col: 1}, "trop de noms (max %d)", math.MaxUint16)
 	}
 	prog.Names = g.names
+	if len(g.strs) > math.MaxUint16 {
+		g.fail(token.Pos{Line: 1, Col: 1}, "trop de chaînes différentes (max %d)", math.MaxUint16)
+	}
+	prog.Strings = g.strs
 	prog.Code = g.code
 	return prog, nil
 }
@@ -108,6 +115,16 @@ func (g *gen) name(s string) int {
 	g.nameIdx[s] = len(g.names)
 	g.names = append(g.names, s)
 	return len(g.names) - 1
+}
+
+// str renvoie l'index de s dans la table des chaînes (ajoutée au besoin).
+func (g *gen) str(s string) int {
+	if i, ok := g.strIdx[s]; ok {
+		return i
+	}
+	g.strIdx[s] = len(g.strs)
+	g.strs = append(g.strs, s)
+	return len(g.strs) - 1
 }
 
 func (g *gen) classEntry(ci *sema.ClassInfo) bytecode.Class {
@@ -318,18 +335,16 @@ func (g *gen) stmt(s ast.Stmt) {
 		g.patch(toEnd, len(g.code))
 
 	case *ast.WhileStmt:
-		l := &loop{start: len(g.code)}
+		l := &loop{cont: len(g.code)}
 		g.loops = append(g.loops, l)
 		g.expr(s.Cond)
 		exit := g.jump(bytecode.JZ)
 		g.stmts(s.Body.Stmts)
-		g.jumpTo(bytecode.JMP, l.start)
-		end := len(g.code)
-		g.patch(exit, end)
-		for _, b := range l.breaks {
-			g.patch(b, end)
-		}
-		g.loops = g.loops[:len(g.loops)-1]
+		g.jumpTo(bytecode.JMP, l.cont)
+		g.endLoop(l, exit)
+
+	case *ast.ForStmt:
+		g.forStmt(s)
 
 	case *ast.ReturnStmt:
 		if s.Value != nil {
@@ -343,13 +358,91 @@ func (g *gen) stmt(s ast.Stmt) {
 		l := g.loops[len(g.loops)-1]
 		if s.Tok == token.BREAK {
 			l.breaks = append(l.breaks, g.jump(bytecode.JMP))
+		} else if l.cont >= 0 {
+			g.jumpTo(bytecode.JMP, l.cont)
 		} else {
-			g.jumpTo(bytecode.JMP, l.start)
+			l.conts = append(l.conts, g.jump(bytecode.JMP))
 		}
 
 	default:
 		panic(fmt.Sprintf("codegen: instruction inconnue %T", s))
 	}
+}
+
+// endLoop place la fin de la boucle l : exit (saut de sortie) et les break y mènent.
+func (g *gen) endLoop(l *loop, exit int) {
+	end := len(g.code)
+	g.patch(exit, end)
+	for _, b := range l.breaks {
+		g.patch(b, end)
+	}
+	g.loops = g.loops[:len(g.loops)-1]
+}
+
+func (g *gen) loadSlot(slot int) {
+	g.op(bytecode.LOAD, +1)
+	g.u8(slot)
+}
+
+func (g *gen) storeSlot(slot int) {
+	g.op(bytecode.STORE, -1)
+	g.u8(slot)
+}
+
+// forStmt compile les deux formes de for (cf. docs/bytecode.md §7).
+func (g *gen) forStmt(s *ast.ForStmt) {
+	slots := g.info.ForSlots[s]
+	a, b := slots[0], slots[1] // for v in x : collection, indice ; for v in x..y : compteur, fin
+	ranged := s.To != nil
+	if ranged {
+		g.expr(s.X)
+		g.storeSlot(a)
+		g.expr(s.To)
+		g.storeSlot(b)
+	} else {
+		g.expr(s.X)
+		g.storeSlot(a)
+		g.pushConst(0)
+		g.storeSlot(b)
+	}
+	counter := a
+	if !ranged {
+		counter = b
+	}
+
+	l := &loop{cont: -1}
+	g.loops = append(g.loops, l)
+	start := len(g.code)
+	if ranged {
+		g.loadSlot(a)
+		g.loadSlot(b)
+	} else {
+		g.loadSlot(b)
+		g.loadSlot(a)
+		g.op(bytecode.LEN, 0)
+	}
+	g.op(bytecode.LT, -1)
+	exit := g.jump(bytecode.JZ)
+	if ranged {
+		g.loadSlot(a)
+	} else {
+		g.loadSlot(a)
+		g.loadSlot(b)
+		g.op(bytecode.GETI, -1)
+	}
+	g.store(s.Var)
+	g.stmts(s.Body.Stmts)
+
+	l.cont = len(g.code)
+	for _, c := range l.conts {
+		g.patch(c, l.cont)
+	}
+	g.loadSlot(counter)
+	g.pushConst(1)
+	g.op(bytecode.ADD, -1)
+	g.storeSlot(counter)
+	g.jumpTo(bytecode.JMP, start)
+	g.endLoop(l, exit)
 }
 
 var compoundOps = map[token.Kind]bytecode.Op{
@@ -386,6 +479,19 @@ func (g *gen) assign(s *ast.AssignStmt) {
 		}
 		g.op(bytecode.SETF, -2)
 		g.u8(idx)
+
+	case *ast.IndexExpr:
+		g.expr(t.X)
+		g.expr(t.Index)
+		if s.Op != token.ASSIGN {
+			g.op(bytecode.DUP2, +2)
+			g.op(bytecode.GETI, -1)
+		}
+		g.expr(s.Value)
+		if s.Op != token.ASSIGN {
+			g.op(compoundOps[s.Op], -1)
+		}
+		g.op(bytecode.SETI, -3)
 
 	default:
 		panic(fmt.Sprintf("codegen: affectation de %T", t))
@@ -465,6 +571,20 @@ func (g *gen) expr(e ast.Expr) {
 			g.pushConst(0)
 		}
 
+	case *ast.StringLit:
+		g.op(bytecode.PUSHS, +1)
+		g.u16(g.str(e.Value))
+
+	case *ast.ArrayLit:
+		g.args(e.Elems)
+		g.op(bytecode.MKARR, 1-len(e.Elems))
+		g.u16(len(e.Elems))
+
+	case *ast.IndexExpr:
+		g.expr(e.X)
+		g.expr(e.Index)
+		g.op(bytecode.GETI, -1)
+
 	case *ast.Ident:
 		g.load(e)
 
@@ -493,6 +613,17 @@ func (g *gen) expr(e ast.Expr) {
 		g.args(e.Args)
 		sym := g.info.Calls[e]
 		n := len(e.Args)
+		if sym.Kind == sema.Builtin {
+			switch sym.Name {
+			case "len":
+				g.op(bytecode.LEN, 0)
+			case "array":
+				g.op(bytecode.NEWARR, 0)
+			default:
+				panic("codegen: fonction intégrée inconnue " + sym.Name)
+			}
+			return
+		}
 		if sym.Kind == sema.Native {
 			g.op(bytecode.CALL_NATIVE, 1-n)
 			g.u16(sym.Index)

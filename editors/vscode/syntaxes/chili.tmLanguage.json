@@ -5,6 +5,7 @@
   "fileTypes": ["chl"],
   "patterns": [
     { "include": "#comments" },
+    { "include": "#strings" },
     { "include": "#class-declaration" },
     { "include": "#function-declaration" },
     { "include": "#constructor" },
@@ -24,6 +25,15 @@
     "comments": {
       "match": "//.*$",
       "name": "comment.line.double-slash.chili"
+    },
+    "strings": {
+      "name": "string.quoted.double.chili",
+      "begin": "\"",
+      "end": "\"|$",
+      "patterns": [
+        { "match": "\\\\(?:[ntr0\"\\\\]|x[0-9A-Fa-f]{2}|u\\{[0-9A-Fa-f]{1,6}\\})", "name": "constant.character.escape.chili" },
+        { "match": "\\\\.", "name": "invalid.illegal.escape.chili" }
+      ]
     },
     "class-declaration": {
       "match": "\\b(?:(abstract)\\s+)?(class)\\s+([A-Za-z_][A-Za-z0-9_]*)(?:\\s+(extends)\\s+([A-Za-z_][A-Za-z0-9_]*))?",
@@ -57,7 +67,7 @@
     "keywords": {
       "patterns": [
         {
-          "match": "\\b(if|else|while)\\b",
+          "match": "\\b(if|else|while|for|in)\\b",
           "name": "keyword.control.conditional.chili"
         },
         {
@@ -104,7 +114,7 @@
     "native-calls": {
       "patterns": [
         {
-          "match": "\\b(gpio)\\s*(\\.)\\s*([A-Za-z_][A-Za-z0-9_]*)",
+          "match": "\\b(gpio|str)\\s*(\\.)\\s*([A-Za-z_][A-Za-z0-9_]*)",
           "captures": {
             "1": { "name": "entity.name.namespace.chili" },
             "2": { "name": "punctuation.accessor.chili" },
@@ -112,7 +122,7 @@
           }
         },
         {
-          "match": "\\b(print|printc|println|delay|millis|random)\\b(?=\\s*\\()",
+          "match": "\\b(print|printc|println|delay|millis|random|len|array)\\b(?=\\s*\\()",
           "name": "support.function.builtin.chili"
         }
       ]
@@ -152,6 +162,7 @@
     },
     "operators": {
       "patterns": [
+        { "match": "\\.\\.", "name": "keyword.operator.range.chili" },
         { "match": "(\\+|-|\\*|/|%)=", "name": "keyword.operator.assignment.compound.chili" },
         { "match": "==|!=|<=|>=|<(?!<)|>(?!>)", "name": "keyword.operator.comparison.chili" },
         { "match": "&&|\\|\\||!", "name": "keyword.operator.logical.chili" },
@@ -164,6 +175,7 @@
       "patterns": [
         { "match": ",", "name": "punctuation.separator.comma.chili" },
         { "match": ";", "name": "punctuation.terminator.statement.chili" },
+        { "match": "\\[|\\]", "name": "punctuation.section.brackets.chili" },
         { "match": "\\.", "name": "punctuation.accessor.chili" }
       ]
     },

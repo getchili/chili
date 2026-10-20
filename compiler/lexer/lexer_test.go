@@ -88,3 +88,41 @@ func TestPositions(t *testing.T) {
 		}
 	}
 }
+
+func TestStrings(t *testing.T) {
+	tests := []struct{ src, want string }{
+		{`"abc"`, "abc"},
+		{`""`, ""},
+		{`"a\nb\t\r\0"`, "a\nb\t\r\x00"},
+		{`"\"\\"`, `"\`},
+		{`"\x41\x6a"`, "Aj"},
+		{`"\u{e9}t\u{1F336}"`, "ét🌶"},
+		{`"été"`, "été"},
+	}
+	for _, tt := range tests {
+		toks := Tokenize([]byte(tt.src))
+		if toks[0].Kind != token.STRING || toks[0].Lit != tt.want {
+			t.Errorf("%s : obtenu %s, attendu %q", tt.src, toks[0], tt.want)
+		}
+		if toks[1].Kind != token.SEMICOLON {
+			t.Errorf("%s : ';' implicite attendu après une chaîne", tt.src)
+		}
+	}
+	for _, src := range []string{`"abc`, "\"ab\ncd\"", `"\q"`, `"\x4"`, `"\u{D800}"`, `"\u{110000}"`, `"\u41"`} {
+		if toks := Tokenize([]byte(src)); toks[0].Kind != token.ILLEGAL {
+			t.Errorf("%q : ILLEGAL attendu, obtenu %s", src, toks[0])
+		}
+	}
+}
+
+func TestBracketsAndRange(t *testing.T) {
+	if got := kinds("t[0]\nfor i in 0..n"); got != "IDENT(t) [ INT(0) ] ; for IDENT(i) in INT(0) .. IDENT(n) ; EOF" {
+		t.Errorf("obtenu %s", got)
+	}
+}
+
+func TestByteOrderMark(t *testing.T) {
+	if got := kinds("\xEF\xBB\xBFlet x"); got != "let IDENT(x) ; EOF" {
+		t.Errorf("BOM : obtenu %s", got)
+	}
+}

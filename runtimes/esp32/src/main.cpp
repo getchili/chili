@@ -4,7 +4,7 @@
  * - exécute le programme .chlb stocké en flash (LittleFS), dès le démarrage ;
  * - reçoit de nouveaux programmes par USB série ou par WiFi (TCP, port 7070),
  *   avec le même protocole texte (docs/protocol.md) ;
- * - fournit les natives : print, delay, millis, gpio.*.
+ * - fournit les natives : print, delay, millis, gpio.*… (les natives str.* viennent de la VM).
  *
  * La VM rend la main régulièrement (budget d'instructions, delay non
  * bloquant) : les commandes restent traitées même pendant un programme.
@@ -32,8 +32,7 @@ static const uint32_t STEPS_PER_LOOP = 2000;
 
 enum ProgState { ST_EMPTY, ST_RUNNING, ST_STOPPED, ST_DONE, ST_ERROR };
 
-static chili_vm vm;       // VM du programme en cours
-static chili_vm scratch;  // sert à vérifier un programme reçu avant de l'accepter
+static chili_vm vm;  // VM du programme en cours (un programme reçu est vérifié dans une VM temporaire)
 static uint8_t *program = nullptr;
 static size_t program_size = 0;
 static uint32_t program_crc = 0;
@@ -76,29 +75,33 @@ static void emit(const char *buf, size_t n)
 /* ------------------------------------------------------------------------ */
 /* Natives (même ordre que vm/src/chili_natives.h)                          */
 
-static chili_status native_print(chili_vm *, const int32_t *args, int32_t *)
+static chili_status native_print(chili_vm *vm, const chili_value *args, chili_value *)
 {
-    broadcast(String(args[0]));
+    char buf[64];
+    uint32_t len;
+    const char *text = chili_text(vm, args[0], buf, sizeof buf, &len);
+    emit(text, len);
+    emit("\r\n", 2);
     return CHILI_OK;
 }
 
-static chili_status native_delay(chili_vm *, const int32_t *args, int32_t *)
+static chili_status native_delay(chili_vm *, const chili_value *args, chili_value *)
 {
-    if (args[0] <= 0)
+    if (args[0].v <= 0)
         return CHILI_OK;
-    wake_at = millis() + (uint32_t)args[0];
+    wake_at = millis() + (uint32_t)args[0].v;
     return CHILI_YIELD;  // la boucle principale reprend la VM après wake_at
 }
 
-static chili_status native_millis(chili_vm *, const int32_t *, int32_t *ret)
+static chili_status native_millis(chili_vm *, const chili_value *, chili_value *ret)
 {
-    *ret = (int32_t)millis();
+    *ret = chili_int((int32_t)millis());
     return CHILI_OK;
 }
 
-static chili_status native_gpio_mode(chili_vm *vm, const int32_t *args, int32_t *)
+static chili_status native_gpio_mode(chili_vm *vm, const chili_value *args, chili_value *)
 {
-    int32_t pin = args[0], mode = args[1];
+    int32_t pin = args[0].v, mode = args[1].v;
     if (pin < 0 || !GPIO_IS_VALID_GPIO(pin))
         return chili_fail(vm, "gpio.mode : broche %ld invalide", (long)pin);
     switch (mode) {
@@ -116,47 +119,47 @@ static chili_status native_gpio_mode(chili_vm *vm, const int32_t *args, int32_t 
     return CHILI_OK;
 }
 
-static chili_status native_gpio_write(chili_vm *vm, const int32_t *args, int32_t *)
+static chili_status native_gpio_write(chili_vm *vm, const chili_value *args, chili_value *)
 {
-    int32_t pin = args[0];
+    int32_t pin = args[0].v;
     if (pin < 0 || !GPIO_IS_VALID_OUTPUT_GPIO(pin))
         return chili_fail(vm, "gpio.write : broche %ld invalide", (long)pin);
-    digitalWrite(pin, args[1] ? HIGH : LOW);
+    digitalWrite(pin, args[1].v ? HIGH : LOW);
     return CHILI_OK;
 }
 
-static chili_status native_gpio_read(chili_vm *vm, const int32_t *args, int32_t *ret)
+static chili_status native_gpio_read(chili_vm *vm, const chili_value *args, chili_value *ret)
 {
-    int32_t pin = args[0];
+    int32_t pin = args[0].v;
     if (pin < 0 || !GPIO_IS_VALID_GPIO(pin))
         return chili_fail(vm, "gpio.read : broche %ld invalide", (long)pin);
-    *ret = digitalRead(pin);
+    *ret = chili_int(digitalRead(pin));
     return CHILI_OK;
 }
 
-static chili_status native_printc(chili_vm *vm, const int32_t *args, int32_t *)
+static chili_status native_printc(chili_vm *vm, const chili_value *args, chili_value *)
 {
     char buf[4];
-    int n = chili_utf8(vm, args[0], buf);
+    int n = chili_utf8(vm, args[0].v, buf);
     if (n == 0)
         return CHILI_ERROR;
     emit(buf, (size_t)n);
     return CHILI_OK;
 }
 
-static chili_status native_println(chili_vm *, const int32_t *, int32_t *)
+static chili_status native_println(chili_vm *, const chili_value *, chili_value *)
 {
     emit("\r\n", 2);
     return CHILI_OK;
 }
 
-static chili_status native_random(chili_vm *vm, const int32_t *args, int32_t *ret)
+static chili_status native_random(chili_vm *vm, const chili_value *args, chili_value *ret)
 {
     // Générateur matériel de l'ESP32 : vrai aléatoire, pas de graine à gérer.
-    return chili_random_range(vm, args[0], args[1], esp_random(), ret);
+    return chili_random_range(vm, args[0].v, args[1].v, esp_random(), &ret->v);
 }
 
-#define X(id, name, arity, fn) {name, arity, fn},
+#define X(id, name, arity, sig, fn) {name, arity, sig, fn},
 static const chili_native natives[] = {CHILI_NATIVES(X)};
 #undef X
 
@@ -254,9 +257,18 @@ static void cmd_load(Channel &ch, size_t size, uint32_t crc)
         reply(ch, "!chili err CRC invalide : transfert corrompu");
         return;
     }
-    if (chili_load(&scratch, buf, size, natives, CHILI_NUM_NATIVES, nullptr) != CHILI_OK) {
+    chili_vm *scratch = (chili_vm *)malloc(sizeof(chili_vm));
+    if (!scratch) {
         free(buf);
-        reply(ch, String("!chili err programme refuse : ") + scratch.error);
+        reply(ch, "!chili err memoire insuffisante pour verifier le programme");
+        return;
+    }
+    bool valid = chili_load(scratch, buf, size, natives, CHILI_NUM_NATIVES, nullptr) == CHILI_OK;
+    String why = scratch->error;
+    free(scratch);
+    if (!valid) {
+        free(buf);
+        reply(ch, "!chili err programme refuse : " + why);
         return;
     }
     File f = LittleFS.open(PROGRAM_PATH, "w");

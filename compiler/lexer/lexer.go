@@ -5,6 +5,9 @@
 package lexer
 
 import (
+	"fmt"
+	"unicode/utf8"
+
 	"github.com/getchili/chili/compiler/token"
 )
 
@@ -18,6 +21,10 @@ type Lexer struct {
 }
 
 func New(src []byte) *Lexer {
+	// Marque d'ordre UTF-8 (BOM) : ajoutée par certains éditeurs Windows, on l'ignore.
+	if len(src) >= 3 && src[0] == 0xEF && src[1] == 0xBB && src[2] == 0xBF {
+		src = src[3:]
+	}
 	return &Lexer{src: src, line: 1, col: 1}
 }
 
@@ -91,6 +98,9 @@ func (lx *Lexer) Next() token.Token {
 
 	case isDigit(c):
 		return lx.number(p)
+
+	case c == '"':
+		return lx.str(p)
 	}
 
 	lx.advance()
@@ -133,7 +143,7 @@ func (lx *Lexer) Next() token.Token {
 			kind = lx.pick('=', token.GE, token.GT)
 		}
 	case '.':
-		kind = token.DOT
+		kind = lx.pick('.', token.DOTDOT, token.DOT)
 	case '(':
 		kind = token.LPAREN
 	case ')':
@@ -142,13 +152,17 @@ func (lx *Lexer) Next() token.Token {
 		kind = token.LBRACE
 	case '}':
 		kind = token.RBRACE
+	case '[':
+		kind = token.LBRACKET
+	case ']':
+		kind = token.RBRACKET
 	case ',':
 		kind = token.COMMA
 	case ';':
 		kind = token.SEMICOLON
 	}
 
-	lx.insertSemi = kind == token.RPAREN || kind == token.RBRACE
+	lx.insertSemi = kind == token.RPAREN || kind == token.RBRACE || kind == token.RBRACKET
 	if kind == token.ILLEGAL {
 		return token.Token{Kind: token.ILLEGAL, Lit: "caractère inattendu " + quoteByte(c), Pos: p}
 	}
@@ -227,6 +241,106 @@ func (lx *Lexer) number(p token.Pos) token.Token {
 		return token.Token{Kind: token.ILLEGAL, Lit: "nombre invalide " + lit, Pos: p}
 	}
 	return token.Token{Kind: token.INT, Lit: lit, Pos: p}
+}
+
+// MaxString est la longueur maximale d'une chaîne constante (u16 dans le bytecode).
+const MaxString = 65535
+
+// str lit une chaîne "…" et décode ses échappements (cf. docs/strings.md §3).
+// La valeur décodée est placée dans Lit.
+func (lx *Lexer) str(p token.Pos) token.Token {
+	lx.advance() // "
+	lx.insertSemi = true
+	var out []byte
+	var bad string // première erreur rencontrée
+	for {
+		if lx.off >= len(lx.src) || lx.src[lx.off] == '\n' {
+			return token.Token{Kind: token.ILLEGAL, Lit: "chaîne non terminée : il manque le \" final", Pos: p}
+		}
+		c := lx.advance()
+		if c == '"' {
+			break
+		}
+		if c != '\\' {
+			out = append(out, c)
+			continue
+		}
+		escPos := lx.col - 1
+		if lx.off >= len(lx.src) || lx.src[lx.off] == '\n' {
+			continue // signalé comme chaîne non terminée au tour suivant
+		}
+		e := lx.advance()
+		switch e {
+		case 'n':
+			out = append(out, '\n')
+		case 't':
+			out = append(out, '\t')
+		case 'r':
+			out = append(out, '\r')
+		case '0':
+			out = append(out, 0)
+		case '"', '\\':
+			out = append(out, e)
+		case 'x':
+			if isHex(lx.peek(0)) && isHex(lx.peek(1)) {
+				out = append(out, hexVal(lx.advance())<<4|hexVal(lx.advance()))
+			} else if bad == "" {
+				bad = fmt.Sprintf("échappement \\x invalide (colonne %d) : il faut 2 chiffres hexadécimaux, ex. \\x41", escPos)
+			}
+		case 'u':
+			r, ok := lx.unicodeEscape()
+			if ok {
+				out = utf8.AppendRune(out, r)
+			} else if bad == "" {
+				bad = fmt.Sprintf("échappement \\u invalide (colonne %d) : écris \\u{e9} avec un code Unicode valide", escPos)
+			}
+		default:
+			if bad == "" {
+				bad = fmt.Sprintf("échappement inconnu \\%c (colonne %d) : utilise \\n \\t \\r \\0 \\\" \\\\ \\xHH ou \\u{…}", e, escPos)
+			}
+		}
+	}
+	if bad != "" {
+		return token.Token{Kind: token.ILLEGAL, Lit: bad, Pos: p}
+	}
+	if len(out) > MaxString {
+		return token.Token{Kind: token.ILLEGAL, Lit: fmt.Sprintf("chaîne trop longue (%d octets, max %d)", len(out), MaxString), Pos: p}
+	}
+	return token.Token{Kind: token.STRING, Lit: string(out), Pos: p}
+}
+
+// unicodeEscape lit « {H…} » après \u.
+func (lx *Lexer) unicodeEscape() (rune, bool) {
+	if lx.peek(0) != '{' {
+		return 0, false
+	}
+	lx.advance()
+	v, n := 0, 0
+	for lx.off < len(lx.src) && isHex(lx.src[lx.off]) {
+		v = v*16 + int(hexVal(lx.advance()))
+		n++
+		if n > 6 {
+			return 0, false
+		}
+	}
+	if n == 0 || lx.peek(0) != '}' {
+		return 0, false
+	}
+	lx.advance()
+	if v > 0x10FFFF || (v >= 0xD800 && v <= 0xDFFF) {
+		return 0, false
+	}
+	return rune(v), true
+}
+
+func hexVal(c byte) byte {
+	switch {
+	case c >= 'a':
+		return c - 'a' + 10
+	case c >= 'A':
+		return c - 'A' + 10
+	}
+	return c - '0'
 }
 
 func isLetter(c byte) bool { return c == '_' || ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') }

@@ -3,14 +3,15 @@ package bytecode
 import (
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 )
 
 // Disassemble écrit une version lisible du programme. nativeName, si non
 // nil, sert à afficher le nom des natives appelées.
 func Disassemble(w io.Writer, p *Program, nativeName func(id int) string) {
-	fmt.Fprintf(w, "; %d globale(s), %d fonction(s), %d classe(s), entrée = %s, %d octets de code\n",
-		p.NumGlobals, len(p.Funcs), len(p.Classes), p.Funcs[p.Entry].Name, len(p.Code))
+	fmt.Fprintf(w, "; %d globale(s), %d fonction(s), %d classe(s), %d chaîne(s), entrée = %s, %d octets de code\n",
+		p.NumGlobals, len(p.Funcs), len(p.Classes), len(p.Strings), p.Funcs[p.Entry].Name, len(p.Code))
 
 	for _, c := range p.Classes {
 		head := "class " + p.Name(int(c.NameIdx))
@@ -73,6 +74,14 @@ func operands(p *Program, op Op, args []int32, next int, nativeName func(int) st
 		}
 	case CALLM:
 		return fmt.Sprintf("%s/%d", p.Name(int(args[0])), args[1])
+	case PUSHS:
+		if int(args[0]) < len(p.Strings) {
+			s := p.Strings[args[0]]
+			if len(s) > 40 {
+				return strconv.Quote(s[:40]) + "…"
+			}
+			return strconv.Quote(s)
+		}
 	}
 	s := ""
 	for i, a := range args {

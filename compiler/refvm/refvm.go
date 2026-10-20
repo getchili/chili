@@ -9,8 +9,11 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/getchili/chili/compiler/bytecode"
+	"github.com/getchili/chili/compiler/natives"
 )
 
 // Limites par défaut, proches de ce qu'aura l'ESP32.
@@ -19,8 +22,72 @@ const (
 	DefaultMaxFrames = 64
 )
 
-// NativeFunc exécute la native d'ID id avec ses arguments.
-type NativeFunc func(id int, args []int32) (int32, error)
+// ---------------------------------------------------------------------------
+// Valeurs (cf. docs/bytecode.md §2)
+
+// Kind est la sorte d'une valeur.
+type Kind uint8
+
+const (
+	Int Kind = iota
+	Str
+	Arr
+	Obj
+)
+
+// Article renvoie le nom de la sorte avec son article (« une chaîne »),
+// tel qu'il apparaît dans les messages d'erreur.
+func (k Kind) Article() string {
+	return [...]string{"un entier", "une chaîne", "un tableau", "un objet"}[k]
+}
+
+// Value est une valeur Chili. Seuls les champs correspondant à K sont utilisés.
+type Value struct {
+	K Kind
+	I int32   // Int
+	S string  // Str
+	A *Array  // Arr
+	O *Object // Obj
+}
+
+type Array struct{ Elems []Value }
+
+type Object struct {
+	Class  int
+	Fields []Value
+}
+
+// IntV et StrV construisent des valeurs (utile aux natives).
+func IntV(i int32) Value  { return Value{K: Int, I: i} }
+func StrV(s string) Value { return Value{K: Str, S: s} }
+
+// truthy applique la règle de vérité : un entier est vrai s'il est non nul,
+// une référence est toujours vraie.
+func (v Value) truthy() bool { return v.K != Int || v.I != 0 }
+
+func equal(a, b Value) bool {
+	if a.K != b.K {
+		return false
+	}
+	switch a.K {
+	case Int:
+		return a.I == b.I
+	case Str:
+		return a.S == b.S
+	case Arr:
+		return a.A == b.A
+	default:
+		return a.O == b.O
+	}
+}
+
+// ---------------------------------------------------------------------------
+// VM
+
+// NativeFunc exécute une native de la plateforme (ID id). Les arguments ont
+// déjà été vérifiés selon la signature de la native. Les natives str.* sont
+// exécutées par la VM elle-même et n'arrivent jamais ici.
+type NativeFunc func(id int, args []Value) (Value, error)
 
 // ErrStepLimit est renvoyée quand le nombre maximal d'instructions est atteint.
 var ErrStepLimit = errors.New("limite d'instructions atteinte")
@@ -46,37 +113,12 @@ type VM struct {
 	prog    *bytecode.Program
 	natives NativeFunc
 
-	Globals   []int32
-	stack     []int32
+	Globals   []Value
+	stack     []Value
 	sp        int
 	frames    []frame
 	MaxFrames int
 	MaxSteps  int // 0 = illimité
-
-	objects []*object // objets créés (pas de ramasse-miettes : la mémoire du PC suffit)
-}
-
-// object est un objet Chili. Sa valeur (handle) vaut handleTag | (index + 1).
-type object struct {
-	class  int
-	fields []int32
-}
-
-const handleTag = 0x4F000000
-
-func (vm *VM) objectOf(v int32) (*object, bool) {
-	if uint32(v)&0xFF000000 != handleTag {
-		return nil, false
-	}
-	i := int(uint32(v)&0xFFFFFF) - 1
-	if i < 0 || i >= len(vm.objects) {
-		return nil, false
-	}
-	return vm.objects[i], true
-}
-
-func (vm *VM) className(c int) string {
-	return vm.prog.Name(int(vm.prog.Classes[c].NameIdx))
 }
 
 // New prépare une VM pour prog (déjà vérifié par bytecode.Verify).
@@ -84,14 +126,34 @@ func New(prog *bytecode.Program, natives NativeFunc) *VM {
 	return &VM{
 		prog:      prog,
 		natives:   natives,
-		Globals:   make([]int32, prog.NumGlobals),
-		stack:     make([]int32, DefaultStackSize),
+		Globals:   make([]Value, prog.NumGlobals),
+		stack:     make([]Value, DefaultStackSize),
 		MaxFrames: DefaultMaxFrames,
 	}
 }
 
-func (vm *VM) push(v int32) { vm.stack[vm.sp] = v; vm.sp++ }
-func (vm *VM) pop() int32   { vm.sp--; return vm.stack[vm.sp] }
+func (vm *VM) className(c int) string {
+	return vm.prog.Name(int(vm.prog.Classes[c].NameIdx))
+}
+
+// Text renvoie le texte d'une valeur, tel que l'affiche print
+// et tel que l'utilise la concaténation.
+func (vm *VM) Text(v Value) string {
+	switch v.K {
+	case Int:
+		return strconv.Itoa(int(v.I))
+	case Str:
+		return v.S
+	case Arr:
+		return fmt.Sprintf("<tableau %d>", len(v.A.Elems))
+	default:
+		return "<" + vm.className(v.O.Class) + ">"
+	}
+}
+
+func (vm *VM) push(v Value) { vm.stack[vm.sp] = v; vm.sp++ }
+func (vm *VM) pop() Value   { vm.sp--; return vm.stack[vm.sp] }
+func (vm *VM) top() *Value  { return &vm.stack[vm.sp-1] }
 
 // enter crée le cadre de la fonction fn ; ses paramètres sont déjà au sommet de la pile.
 func (vm *VM) enter(fn int) error {
@@ -104,10 +166,18 @@ func (vm *VM) enter(fn int) error {
 		return errors.New("dépassement de pile")
 	}
 	for i := int(f.NumParams); i < int(f.NumLocals); i++ {
-		vm.push(0)
+		vm.push(IntV(0))
 	}
 	vm.frames = append(vm.frames, frame{fn: fn, pc: int(f.Offset), base: base})
 	return nil
+}
+
+// opSymbols donne l'opérateur du source de chaque opcode, pour les messages.
+var opSymbols = map[bytecode.Op]string{
+	bytecode.ADD: "+", bytecode.SUB: "-", bytecode.MUL: "*", bytecode.DIV: "/", bytecode.MOD: "%",
+	bytecode.AND: "&", bytecode.OR: "|", bytecode.XOR: "^", bytecode.SHL: "<<", bytecode.SHR: ">>",
+	bytecode.NEG: "-", bytecode.BNOT: "~",
+	bytecode.LT: "<", bytecode.LE: "<=", bytecode.GT: ">", bytecode.GE: ">=",
 }
 
 // Run exécute le programme depuis sa fonction d'entrée jusqu'à HALT.
@@ -139,11 +209,17 @@ func (vm *VM) Run() error {
 			return nil
 
 		case bytecode.PUSH:
-			vm.push(bytecode.ReadOperand(code, pc+1, bytecode.I32))
+			vm.push(IntV(bytecode.ReadOperand(code, pc+1, bytecode.I32)))
 		case bytecode.PUSH8:
-			vm.push(bytecode.ReadOperand(code, pc+1, bytecode.I8))
+			vm.push(IntV(bytecode.ReadOperand(code, pc+1, bytecode.I8)))
+		case bytecode.PUSHS:
+			vm.push(StrV(vm.prog.Strings[bytecode.ReadOperand(code, pc+1, bytecode.U16)]))
 		case bytecode.POP:
 			vm.sp--
+		case bytecode.DUP2:
+			a, b := vm.stack[vm.sp-2], vm.stack[vm.sp-1]
+			vm.push(a)
+			vm.push(b)
 
 		case bytecode.LOAD:
 			vm.push(vm.stack[fr.base+int(code[pc+1])])
@@ -154,32 +230,84 @@ func (vm *VM) Run() error {
 		case bytecode.GSTORE:
 			vm.Globals[bytecode.ReadOperand(code, pc+1, bytecode.U16)] = vm.pop()
 
-		case bytecode.NEG:
-			vm.stack[vm.sp-1] = -vm.stack[vm.sp-1]
+		case bytecode.NEG, bytecode.BNOT:
+			t := vm.top()
+			if t.K != Int {
+				return fail("'%s' impossible sur %s", opSymbols[op], t.K.Article())
+			}
+			if op == bytecode.NEG {
+				t.I = -t.I
+			} else {
+				t.I = ^t.I
+			}
 		case bytecode.NOT:
-			vm.stack[vm.sp-1] = b2i(vm.stack[vm.sp-1] == 0)
-		case bytecode.BNOT:
-			vm.stack[vm.sp-1] = ^vm.stack[vm.sp-1]
+			*vm.top() = IntV(b2i(!vm.top().truthy()))
 
-		case bytecode.ADD, bytecode.SUB, bytecode.MUL, bytecode.DIV, bytecode.MOD,
-			bytecode.AND, bytecode.OR, bytecode.XOR, bytecode.SHL, bytecode.SHR,
-			bytecode.EQ, bytecode.NE, bytecode.LT, bytecode.LE, bytecode.GT, bytecode.GE:
+		case bytecode.EQ, bytecode.NE:
 			b := vm.pop()
 			a := vm.pop()
-			r, err := binary(op, a, b)
+			vm.push(IntV(b2i(equal(a, b) == (op == bytecode.EQ))))
+
+		case bytecode.ADD:
+			b, a := vm.stack[vm.sp-1], vm.stack[vm.sp-2]
+			var r Value
+			switch {
+			case a.K == Int && b.K == Int:
+				r = IntV(a.I + b.I)
+			case (a.K == Str || b.K == Str) && (a.K == Int || a.K == Str) && (b.K == Int || b.K == Str):
+				r = StrV(vm.Text(a) + vm.Text(b))
+			default:
+				return fail("'+' impossible entre %s et %s", a.K.Article(), b.K.Article())
+			}
+			vm.sp -= 2
+			vm.push(r)
+
+		case bytecode.LT, bytecode.LE, bytecode.GT, bytecode.GE:
+			b := vm.pop()
+			a := vm.pop()
+			var c int // comparaison : -1, 0, 1
+			switch {
+			case a.K == Int && b.K == Int:
+				c = cmpInt(a.I, b.I)
+			case a.K == Str && b.K == Str:
+				c = strings.Compare(a.S, b.S)
+			default:
+				return fail("'%s' impossible entre %s et %s", opSymbols[op], a.K.Article(), b.K.Article())
+			}
+			var r bool
+			switch op {
+			case bytecode.LT:
+				r = c < 0
+			case bytecode.LE:
+				r = c <= 0
+			case bytecode.GT:
+				r = c > 0
+			default:
+				r = c >= 0
+			}
+			vm.push(IntV(b2i(r)))
+
+		case bytecode.SUB, bytecode.MUL, bytecode.DIV, bytecode.MOD,
+			bytecode.AND, bytecode.OR, bytecode.XOR, bytecode.SHL, bytecode.SHR:
+			b := vm.pop()
+			a := vm.pop()
+			if a.K != Int || b.K != Int {
+				return fail("'%s' impossible entre %s et %s", opSymbols[op], a.K.Article(), b.K.Article())
+			}
+			r, err := binary(op, a.I, b.I)
 			if err != nil {
 				return fail("%v", err)
 			}
-			vm.push(r)
+			vm.push(IntV(r))
 
 		case bytecode.JMP:
 			fr.pc += int(bytecode.ReadOperand(code, pc+1, bytecode.I16))
 		case bytecode.JZ:
-			if vm.pop() == 0 {
+			if !vm.pop().truthy() {
 				fr.pc += int(bytecode.ReadOperand(code, pc+1, bytecode.I16))
 			}
 		case bytecode.JNZ:
-			if vm.pop() != 0 {
+			if vm.pop().truthy() {
 				fr.pc += int(bytecode.ReadOperand(code, pc+1, bytecode.I16))
 			}
 
@@ -191,58 +319,113 @@ func (vm *VM) Run() error {
 		case bytecode.CALL_NATIVE:
 			id := int(bytecode.ReadOperand(code, pc+1, bytecode.U16))
 			argc := int(code[pc+3])
-			args := append([]int32(nil), vm.stack[vm.sp-argc:vm.sp]...)
-			vm.sp -= argc
-			r, err := vm.natives(id, args)
+			args := append([]Value(nil), vm.stack[vm.sp-argc:vm.sp]...)
+			r, err := vm.callNative(id, args)
 			if err != nil {
-				return fail("native %d : %v", id, err)
+				return fail("%v", err)
 			}
+			vm.sp -= argc
 			vm.push(r)
 
 		case bytecode.ALLOC:
 			c := int(bytecode.ReadOperand(code, pc+1, bytecode.U16))
-			if len(vm.objects) >= 0xFFFFFE {
-				return fail("mémoire des objets pleine")
-			}
-			vm.objects = append(vm.objects, &object{class: c, fields: make([]int32, vm.prog.Classes[c].NumFields)})
-			vm.push(int32(handleTag | uint32(len(vm.objects))))
+			fields := make([]Value, vm.prog.Classes[c].NumFields)
+			vm.push(Value{K: Obj, O: &Object{Class: c, Fields: fields}})
 
 		case bytecode.GETF, bytecode.SETF:
 			idx := int(code[pc+1])
-			var val int32
+			var val Value
 			if op == bytecode.SETF {
 				val = vm.pop()
 			}
-			obj, ok := vm.objectOf(vm.pop())
-			if !ok || idx >= len(obj.fields) {
+			o := vm.pop()
+			if o.K != Obj || idx >= len(o.O.Fields) {
 				return fail("accès à un champ sur une valeur qui n'est pas un objet")
 			}
 			if op == bytecode.SETF {
-				obj.fields[idx] = val
+				o.O.Fields[idx] = val
 			} else {
-				vm.push(obj.fields[idx])
+				vm.push(o.O.Fields[idx])
 			}
 
 		case bytecode.CALLM:
 			sel := uint16(bytecode.ReadOperand(code, pc+1, bytecode.U16))
 			argc := int(code[pc+3])
 			name := vm.prog.Name(int(sel))
-			obj, ok := vm.objectOf(vm.stack[vm.sp-argc-1])
-			if !ok {
+			o := vm.stack[vm.sp-argc-1]
+			if o.K != Obj {
 				return fail("appel de %s() sur une valeur qui n'est pas un objet", name)
 			}
-			methods := vm.prog.Classes[obj.class].Methods
+			class := o.O.Class
+			methods := vm.prog.Classes[class].Methods
 			i := sort.Search(len(methods), func(i int) bool { return methods[i].Selector >= sel })
 			if i == len(methods) || methods[i].Selector != sel {
-				return fail("la classe %s n'a pas de méthode %s", vm.className(obj.class), name)
+				return fail("la classe %s n'a pas de méthode %s", vm.className(class), name)
 			}
 			fn := int(methods[i].Fn)
 			if int(vm.prog.Funcs[fn].NumParams) != argc+1 {
-				return fail("%s.%s attend %d argument(s), %d fourni(s)", vm.className(obj.class), name,
+				return fail("%s.%s attend %d argument(s), %d fourni(s)", vm.className(class), name,
 					vm.prog.Funcs[fn].NumParams-1, argc)
 			}
 			if err := vm.enter(fn); err != nil {
 				return fail("%v", err)
+			}
+
+		case bytecode.NEWARR:
+			n := vm.top()
+			if n.K != Int {
+				return fail("array() attend un entier (reçu : %s)", n.K.Article())
+			}
+			if n.I < 0 {
+				return fail("array(%d) : taille invalide", n.I)
+			}
+			elems := make([]Value, n.I) // Value{} est l'entier 0
+			*n = Value{K: Arr, A: &Array{Elems: elems}}
+
+		case bytecode.MKARR:
+			n := int(bytecode.ReadOperand(code, pc+1, bytecode.U16))
+			elems := append([]Value(nil), vm.stack[vm.sp-n:vm.sp]...)
+			if elems == nil {
+				elems = []Value{}
+			}
+			vm.sp -= n
+			vm.push(Value{K: Arr, A: &Array{Elems: elems}})
+
+		case bytecode.GETI:
+			i := vm.pop()
+			x := vm.pop()
+			idx, err := checkIndex(x, i)
+			if err != nil {
+				return fail("%v", err)
+			}
+			if x.K == Arr {
+				vm.push(x.A.Elems[idx])
+			} else {
+				vm.push(IntV(int32(x.S[idx])))
+			}
+
+		case bytecode.SETI:
+			v := vm.pop()
+			i := vm.pop()
+			t := vm.pop()
+			if t.K == Str {
+				return fail("les chaînes ne sont pas modifiables")
+			}
+			idx, err := checkIndex(t, i)
+			if err != nil {
+				return fail("%v", err)
+			}
+			t.A.Elems[idx] = v
+
+		case bytecode.LEN:
+			x := vm.top()
+			switch x.K {
+			case Arr:
+				*x = IntV(int32(len(x.A.Elems)))
+			case Str:
+				*x = IntV(int32(len(x.S)))
+			default:
+				return fail("len() impossible sur %s", x.K.Article())
 			}
 
 		case bytecode.RET:
@@ -260,6 +443,56 @@ func (vm *VM) Run() error {
 	}
 }
 
+// checkIndex vérifie x[i] : x tableau ou chaîne, i entier dans [0, len[.
+func checkIndex(x, i Value) (int, error) {
+	n := 0
+	switch x.K {
+	case Arr:
+		n = len(x.A.Elems)
+	case Str:
+		n = len(x.S)
+	default:
+		return 0, fmt.Errorf("indexation impossible sur %s", x.K.Article())
+	}
+	if i.K != Int {
+		return 0, fmt.Errorf("l'indice doit être un entier (reçu : %s)", i.K.Article())
+	}
+	if i.I < 0 || int(i.I) >= n {
+		return 0, fmt.Errorf("indice %d hors limites (taille %d)", i.I, n)
+	}
+	return int(i.I), nil
+}
+
+// callNative vérifie les arguments selon la signature de la native, puis
+// exécute les natives str.* ou passe la main à la plateforme.
+func (vm *VM) callNative(id int, args []Value) (Value, error) {
+	n := natives.Table[id]
+	for i, want := range n.Sig {
+		got := args[i].K
+		if (want == 'i' && got != Int) || (want == 's' && got != Str) {
+			wantName := "un entier"
+			if want == 's' {
+				wantName = "une chaîne"
+			}
+			return Value{}, fmt.Errorf("%s : l'argument %d doit être %s (reçu : %s)", n.Name, i+1, wantName, got.Article())
+		}
+	}
+	switch n.Name {
+	case "str.sub":
+		return StrV(natives.StrSub(args[0].S, args[1].I, args[2].I)), nil
+	case "str.find":
+		return IntV(natives.StrFind(args[0].S, args[1].S)), nil
+	case "str.char":
+		if err := natives.CheckChar(n.Name, args[0].I); err != nil {
+			return Value{}, err
+		}
+		return StrV(string(rune(args[0].I))), nil
+	case "str.int":
+		return IntV(natives.StrInt(args[0].S)), nil
+	}
+	return vm.natives(id, args)
+}
+
 func b2i(b bool) int32 {
 	if b {
 		return 1
@@ -267,12 +500,20 @@ func b2i(b bool) int32 {
 	return 0
 }
 
-// binary applique un opérateur binaire. En Go, MinInt32 / -1 vaut MinInt32
-// et MinInt32 % -1 vaut 0, comme l'exige la spec.
+func cmpInt(a, b int32) int {
+	switch {
+	case a < b:
+		return -1
+	case a > b:
+		return 1
+	}
+	return 0
+}
+
+// binary applique un opérateur arithmétique ou bit à bit. En Go,
+// MinInt32 / -1 vaut MinInt32 et MinInt32 % -1 vaut 0, comme l'exige la spec.
 func binary(op bytecode.Op, a, b int32) (int32, error) {
 	switch op {
-	case bytecode.ADD:
-		return a + b, nil
 	case bytecode.SUB:
 		return a - b, nil
 	case bytecode.MUL:
@@ -295,19 +536,7 @@ func binary(op bytecode.Op, a, b int32) (int32, error) {
 		return a ^ b, nil
 	case bytecode.SHL:
 		return int32(uint32(a) << (uint32(b) & 31)), nil
-	case bytecode.SHR:
+	default: // SHR
 		return a >> (uint32(b) & 31), nil
-	case bytecode.EQ:
-		return b2i(a == b), nil
-	case bytecode.NE:
-		return b2i(a != b), nil
-	case bytecode.LT:
-		return b2i(a < b), nil
-	case bytecode.LE:
-		return b2i(a <= b), nil
-	case bytecode.GT:
-		return b2i(a > b), nil
-	default: // GE
-		return b2i(a >= b), nil
 	}
 }

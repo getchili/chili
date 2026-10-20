@@ -152,6 +152,8 @@ func describe(t token.Token) string {
 		return "identifiant '" + t.Lit + "'"
 	case token.INT:
 		return "nombre " + t.Lit
+	case token.STRING:
+		return "chaîne " + strconv.Quote(t.Lit)
 	}
 	return quote(t.Kind)
 }
@@ -162,6 +164,8 @@ func quote(k token.Kind) string {
 		return "identifiant"
 	case token.INT:
 		return "nombre"
+	case token.STRING:
+		return "chaîne"
 	}
 	return "'" + k.String() + "'"
 }
@@ -363,6 +367,18 @@ func (p *Parser) parseStmt() ast.Stmt {
 		p.next()
 		cond := p.parseExpr()
 		return &ast.WhileStmt{WhilePos: t.Pos, Cond: cond, Body: p.parseBlock()}
+	case token.FOR:
+		t := p.tok
+		p.next()
+		s := &ast.ForStmt{ForPos: t.Pos, Var: p.ident()}
+		p.expect(token.IN)
+		s.X = p.parseExpr()
+		if p.tok.Kind == token.DOTDOT {
+			p.next()
+			s.To = p.parseExpr()
+		}
+		s.Body = p.parseBlock()
+		return s
 	case token.RETURN:
 		t := p.tok
 		p.next()
@@ -418,9 +434,9 @@ func (p *Parser) parseSimpleStmt() ast.Stmt {
 	if isAssignOp(p.tok.Kind) {
 		op := p.tok
 		switch x.(type) {
-		case *ast.Ident, *ast.FieldExpr:
+		case *ast.Ident, *ast.FieldExpr, *ast.IndexExpr:
 		default:
-			p.errorf(op.Pos, "on ne peut affecter qu'une variable ou un champ (this.champ)")
+			p.errorf(op.Pos, "on ne peut affecter qu'une variable, un champ (this.champ) ou une case (t[i])")
 		}
 		p.next()
 		return &ast.AssignStmt{Target: x, Op: op.Kind, Value: p.parseExpr()}
@@ -518,6 +534,13 @@ func (p *Parser) parsePostfix() ast.Expr {
 			}
 			x = &ast.FieldExpr{ThisPos: th.ThisPos, Name: name}
 
+		case token.LBRACKET:
+			p.next()
+			idx := p.parseExpr()
+			p.expect(token.RBRACKET)
+			x = &ast.IndexExpr{X: x, Index: idx}
+			called = true // t[i](…) n'est pas un appel valide
+
 		default:
 			return x
 		}
@@ -552,6 +575,11 @@ func (p *Parser) parsePrimary() ast.Expr {
 	case token.TRUE, token.FALSE:
 		p.next()
 		return &ast.BoolLit{LitPos: t.Pos, Value: t.Kind == token.TRUE}
+	case token.STRING:
+		p.next()
+		return &ast.StringLit{LitPos: t.Pos, Value: t.Lit}
+	case token.LBRACKET:
+		return p.parseArrayLit()
 	case token.IDENT:
 		id := p.ident()
 		if p.tok.Kind == token.DOT && natives.IsModule(id.Name) {
@@ -581,6 +609,31 @@ func (p *Parser) parsePrimary() ast.Expr {
 	}
 	p.errorf(t.Pos, "expression attendue, trouvé %s", describe(t))
 	return nil
+}
+
+// parseArrayLit lit « [ a, b, … ] ». Les fins de ligne y sont ignorées.
+func (p *Parser) parseArrayLit() *ast.ArrayLit {
+	lb := p.expect(token.LBRACKET)
+	e := &ast.ArrayLit{LBrack: lb.Pos}
+	p.skipNewlines()
+	for p.tok.Kind != token.RBRACKET {
+		e.Elems = append(e.Elems, p.parseExpr())
+		p.skipNewlines()
+		if p.tok.Kind != token.COMMA {
+			break
+		}
+		p.next()
+		p.skipNewlines()
+	}
+	p.expect(token.RBRACKET)
+	return e
+}
+
+// skipNewlines saute les ';' insérés automatiquement en fin de ligne.
+func (p *Parser) skipNewlines() {
+	for p.tok.Kind == token.SEMICOLON && p.tok.Lit == "\n" {
+		p.next()
+	}
 }
 
 // parseInt convertit un littéral (décimal, 0x, 0b, avec '_') en int32.

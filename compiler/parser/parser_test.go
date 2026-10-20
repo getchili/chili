@@ -211,3 +211,38 @@ func TestClassErrors(t *testing.T) {
 		}
 	}
 }
+
+func TestStringsArraysFor(t *testing.T) {
+	src := `function f(t) {
+    let s = "a\"b"
+    let v = [1, t[0],
+        [2]]
+    t[1] += v[2][0]
+    for x in t { print(x) }
+    for i in 0..len(t) { this.y[i] = i }
+}`
+	prog, err := Parse([]byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `(function f (t) (block (let s "a\"b") (let v (array 1 (index t 0) (array 2))) (+= (index t 1) (index (index v 2) 0)) (for x t (block (call print x))) (for i (.. 0 (call len t)) (block (= (index this.y i) i)))))`
+	if got := prog.String(); got != want {
+		t.Errorf("\n got: %s\nwant: %s", got, want)
+	}
+}
+
+func TestStringsArraysForErrors(t *testing.T) {
+	tests := []struct{ src, want string }{
+		{"function f() { for i = 0 { } }", "'in' attendu"},
+		{"function f() { [1, 2 }", "']' attendu"},
+		{"function f() { t[0](1) }", "seule une fonction nommée peut être appelée"},
+		{"function f() { \"a\" = 1 }", "on ne peut affecter qu'une variable"},
+		{"function f() { \"abc }", "chaîne non terminée"},
+	}
+	for _, tt := range tests {
+		_, err := Parse([]byte(tt.src))
+		if err == nil || !strings.Contains(err.Error(), tt.want) {
+			t.Errorf("%q : erreur %v, attendu %q", tt.src, err, tt.want)
+		}
+	}
+}

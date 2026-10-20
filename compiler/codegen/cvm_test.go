@@ -90,7 +90,21 @@ func TestCVMRuntimeErrors(t *testing.T) {
 		{"class A { function f() {} }\nclass Main { function main() { let x = 5\n x.f() } }",
 			"appel de f() sur une valeur qui n'est pas un objet"},
 		{"class A { function f() {} }\nclass B { function g() {} }\nclass Main { function main() { let o = new B()\n o.f() } }",
-			"la classe B n'a pas de methode f"}}
+			"la classe B n'a pas de methode f"},
+		{"class Main { function main() { print(\"a\" - 1) } }", "'-' impossible entre une chaine et un entier"},
+		{"class Main { function main() { print([1] + 1) } }", "'+' impossible entre un tableau et un entier"},
+		{"class Main { function main() { let t = [1]\n print(t[1]) } }", "indice 1 hors limites (taille 1)"},
+		{"class Main { function main() { let t = [1]\n print(t[\"a\"]) } }", "l'indice doit etre un entier (recu : une chaine)"},
+		{"class Main { function main() { let s = \"a\"\n s[0] = 1 } }", "les chaines ne sont pas modifiables"},
+		{"class Main { function main() { print(len(5)) } }", "len() impossible sur un entier"},
+		{"class Main { function main() { print(array(-1)) } }", "array(-1) : taille invalide"},
+		{"class Main { function main() { let x = 5\n print(x[0]) } }", "indexation impossible sur un entier"},
+		{"class Main { function main() { print(\"ab\" < 1) } }", "'<' impossible entre une chaine et un entier"},
+		{"class Main { function main() { gpio.write(\"a\", 1) } }", "gpio.write : l'argument 1 doit etre un entier (recu : une chaine)"},
+		{"class Main { function main() { print(str.char(-1)) } }", "str.char : -1 n'est pas un code de caractere valide"},
+		{"class Main { function main() { print(\"a\" + this) } }", "'+' impossible entre une chaine et un objet"},
+		{"class Main { function main() { let t = array(100000) } }", "memoire des objets pleine"},
+		{"class Main { function main() { let t = [0]\n while true { t = [t, array(50)] } } }", "memoire des objets pleine"}}
 	for _, tt := range tests {
 		_, errOut, ok := runCVM(t, exe, tt.src)
 		if ok || !strings.Contains(errOut, tt.want) {
@@ -121,15 +135,15 @@ func TestNativesTableInSync(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	re := regexp.MustCompile(`X\(\s*\w+,\s*"([^"]+)",\s*(\d+),`)
+	re := regexp.MustCompile(`X\(\s*\w+,\s*"([^"]+)",\s*(\d+),\s*"([^"]*)",`)
 	matches := re.FindAllStringSubmatch(string(src), -1)
 	if len(matches) != len(natives.Table) {
 		t.Fatalf("%d natives en C, %d en Go", len(matches), len(natives.Table))
 	}
 	for i, m := range matches {
 		arity, _ := strconv.Atoi(m[2])
-		if n := natives.Table[i]; m[1] != n.Name || arity != n.Arity {
-			t.Errorf("native %d : C = %s/%d, Go = %s/%d", i, m[1], arity, n.Name, n.Arity)
+		if n := natives.Table[i]; m[1] != n.Name || arity != n.Arity || m[3] != n.Sig {
+			t.Errorf("native %d : C = %s/%d %q, Go = %s/%d %q", i, m[1], arity, m[3], n.Name, n.Arity, n.Sig)
 		}
 	}
 }

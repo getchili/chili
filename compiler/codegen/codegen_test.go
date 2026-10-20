@@ -33,21 +33,23 @@ func run(t *testing.T, src string) (string, error) {
 	randomID, _, _ := natives.Lookup("random")
 	printcID, _, _ := natives.Lookup("printc")
 	printlnID, _, _ := natives.Lookup("println")
-	vm := refvm.New(decoded, func(id int, args []int32) (int32, error) {
+	var vm *refvm.VM
+	vm = refvm.New(decoded, func(id int, args []refvm.Value) (refvm.Value, error) {
 		switch id {
 		case printID:
-			fmt.Fprintln(&out, args[0])
+			fmt.Fprintln(&out, vm.Text(args[0]))
 		case randomID:
-			return natives.RandomRange(args[0], args[1], rand.Uint32())
+			r, err := natives.RandomRange(args[0].I, args[1].I, rand.Uint32())
+			return refvm.IntV(r), err
 		case printcID:
-			if err := natives.CheckChar(args[0]); err != nil {
-				return 0, err
+			if err := natives.CheckChar("printc", args[0].I); err != nil {
+				return refvm.Value{}, err
 			}
-			out.WriteString(string(rune(args[0])))
+			out.WriteString(string(rune(args[0].I)))
 		case printlnID:
 			out.WriteString("\n")
 		}
-		return 0, nil
+		return refvm.IntV(0), nil
 	})
 	vm.MaxSteps = 1_000_000
 	err = vm.Run()
@@ -373,6 +375,152 @@ class Main {
         print(garde.somme())
     }
 }`, "59998 3000"},
+
+	{"chaînes : littéraux, concaténation, comparaisons", `
+class Main {
+    function main() {
+        let s = "abc"
+        print(s)
+        print(len(s))
+        print(s[0] + s[2])
+        print("x" + 5 + "y")
+        print(1 + 2 + "z")
+        print("\u{e9}t\u{e9}")
+        print(len("été"))
+        print("a\tb" == "a\tb")
+        let t = "ab" + "c"
+        print(t == s)
+        print(t != "abd")
+        print("abc" < "abd")
+        print("b" > "abc")
+        print("" == "")
+        print(len(""))
+        print("x\x41\"\\")
+        print("1" == 1)
+        let compte = 0
+        if "" { compte += 1 }
+        if [] { compte += 1 }
+        if !"x" { compte += 10 }
+        print(compte)
+    }
+}`, `abc 3 196 x5y 3z été 5 1 1 1 1 1 1 0 xA"\ 0 2`},
+
+	{"chaînes : natives str", `
+class Main {
+    function main() {
+        print(str.sub("bonjour", 3, 7))
+        print(str.sub("abc", -1, 2))
+        print(str.find("bonjour", "jour"))
+        print(str.find("abc", "z"))
+        print(str.char(233) + "!")
+        print(str.int("-42") + 1)
+        print(str.int("x"))
+        print(str.sub("abc", 2, 1) + "|")
+    }
+}`, "jour ab 3 -1 é! -41 0 |"},
+
+	{"tableaux", `
+let notes = [262, 294, 330]
+class Point {
+    let x
+    constructor(a) { this.x = a }
+    function getX() { return this.x }
+}
+class Main {
+    let grille
+    function main() {
+        print(len(notes))
+        print(notes[1])
+        notes[1] = 300
+        notes[2] += 5
+        print(notes[1] + notes[2])
+        let t = array(4)
+        print(len(t))
+        print(t[3])
+        let b = t
+        b[0] = "zéro"
+        print(t[0])
+        print(t == b)
+        print([1] == [1])
+        let vide = []
+        print(len(vide))
+        let m = [
+            [1, 2],
+            [3, 4]
+        ]
+        print(m[1][0])
+        m[0][1] *= 10
+        print(m[0][1])
+        let objs = [new Point(7), "s", 3]
+        print(objs[0].getX())
+        print(objs)
+        print(objs[0])
+        this.grille = array(2)
+        this.grille[1] = 9
+        print(this.grille[1])
+    }
+}`, "3 294 635 4 0 zéro 1 0 0 3 20 7 <tableau 3> <Point> 9"},
+
+	{"boucle for", `
+class Main {
+    function main() {
+        let total = 0
+        for n in [1, 2, 3, 4] { total += n }
+        print(total)
+        for i in 0..3 { print(i) }
+        for i in 5..5 { print(99) }
+        for c in "AB" { print(c) }
+        let s = 0
+        for i in 0..10 {
+            if i == 2 { continue }
+            if i == 5 { break }
+            s += i
+        }
+        print(s)
+        for i in 0..2 {
+            for j in 0..2 { print(i * 10 + j) }
+        }
+        let n = 3
+        let tours = 0
+        for i in 0..n {
+            n = 0
+            i = 100
+            tours += 1
+        }
+        print(tours)
+        let t = [5, 6]
+        for v in t { v = 0 }
+        print(t[0])
+        let k = 0
+        while true {
+            for i in 0..5 { if i == 1 { break } }
+            k += 1
+            if k == 3 { break }
+            continue
+        }
+        print(k)
+    }
+}`, "10 0 1 2 65 66 8 0 1 10 11 3 5 3"},
+
+	{"chaînes et tableaux : beaucoup d'allocations (ramasse-miettes)", `
+class Main {
+    function main() {
+        let garde = ["a" + 1, array(3)]
+        let total = 0
+        for i in 0..5000 {
+            let s = "n=" + i
+            let t = [i, s, array(10)]
+            total += len(t[1]) % 5
+        }
+        print(total)
+        print(garde[0])
+        print(len(garde[1]))
+        let long = ""
+        for i in 0..300 { long = long + "ab" }
+        print(len(long))
+        print(long[599])
+    }
+}`, "4390 a1 3 600 98"},
 }
 
 func TestPrograms(t *testing.T) {
@@ -405,6 +553,20 @@ func TestRuntimeErrors(t *testing.T) {
 			"appel de f() sur une valeur qui n'est pas un objet"},
 		{"méthode absente de la classe réelle", "class A { function f() {} }\nclass B { function g() {} }\nclass Main { function main() { let o = new B()\n o.f() } }",
 			"la classe B n'a pas de méthode f"},
+		{"soustraction de chaînes", "class Main { function main() { print(\"a\" - 1) } }", "'-' impossible entre une chaîne et un entier"},
+		{"tableau plus entier", "class Main { function main() { print([1] + 1) } }", "'+' impossible entre un tableau et un entier"},
+		{"indice hors limites", "class Main { function main() { let t = [1]\n print(t[1]) } }", "indice 1 hors limites (taille 1)"},
+		{"indice négatif", "class Main { function main() { let t = [1]\n print(t[-1]) } }", "indice -1 hors limites (taille 1)"},
+		{"indice non entier", "class Main { function main() { let t = [1]\n print(t[\"a\"]) } }", "l'indice doit être un entier (reçu : une chaîne)"},
+		{"chaîne non modifiable", "class Main { function main() { let s = \"a\"\n s[0] = 1 } }", "les chaînes ne sont pas modifiables"},
+		{"len d'un entier", "class Main { function main() { print(len(5)) } }", "len() impossible sur un entier"},
+		{"array négatif", "class Main { function main() { print(array(-1)) } }", "array(-1) : taille invalide"},
+		{"indexation d'un entier", "class Main { function main() { let x = 5\n print(x[0]) } }", "indexation impossible sur un entier"},
+		{"comparaison mixte", "class Main { function main() { print(\"ab\" < 1) } }", "'<' impossible entre une chaîne et un entier"},
+		{"for sur un entier", "class Main { function main() { for x in 5 { } } }", "len() impossible sur un entier"},
+		{"signature de native", "class Main { function main() { gpio.write(\"a\", 1) } }", "gpio.write : l'argument 1 doit être un entier (reçu : une chaîne)"},
+		{"str.char invalide", "class Main { function main() { print(str.char(-1)) } }", "str.char : -1 n'est pas un code de caractère valide"},
+		{"concaténation d'un objet", "class Main { function main() { print(\"a\" + this) } }", "'+' impossible entre une chaîne et un objet"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -442,7 +604,7 @@ class Main {
 	}
 	var b strings.Builder
 	bytecode.Disassemble(&b, prog, natives.Name)
-	want := `; 1 globale(s), 3 fonction(s), 1 classe(s), entrée = <init>, 62 octets de code
+	want := `; 1 globale(s), 3 fonction(s), 1 classe(s), 0 chaîne(s), entrée = <init>, 62 octets de code
 
 class Main  ; 0 champ(s)
   main           -> Main.main

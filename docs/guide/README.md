@@ -9,12 +9,13 @@ Suis les pages dans l'ordre la première fois :
 1. [Installation](installation.md) — installer Chili sur Windows (2 minutes).
 2. [Premiers pas](premiers-pas.md) — brancher la carte et faire clignoter sa LED.
 3. [Le langage](langage.md) — variables, conditions, boucles, fonctions.
-4. [Classes](classes.md) — regrouper données et fonctions en objets (`class`, `new`, `extends`).
-5. [Fonctions natives](natives.md) — `print`, `delay`, `millis`, `random`, broches GPIO.
-6. [Commandes](commandes.md) — toutes les commandes de `chili`, avec leurs sorties.
-7. [WiFi](wifi.md) — envoyer tes programmes sans câble.
-8. [Dépannage](depannage.md) — quand quelque chose ne marche pas.
-9. [Chili Lab](chili-lab.md) — l'application de bureau, tout à la souris.
+4. [Textes, tableaux et `for`](textes-tableaux.md) — `"bonjour"`, `[1, 2, 3]`, `for v in t`.
+5. [Classes](classes.md) — regrouper données et fonctions en objets (`class`, `new`, `extends`).
+6. [Fonctions natives](natives.md) — `print`, `delay`, `millis`, `random`, broches GPIO.
+7. [Commandes](commandes.md) — toutes les commandes de `chili`, avec leurs sorties.
+8. [WiFi](wifi.md) — envoyer tes programmes sans câble.
+9. [Dépannage](depannage.md) — quand quelque chose ne marche pas.
+10. [Chili Lab](chili-lab.md) — l'application de bureau, tout à la souris.
 
 ## Ce qu'il te faut
 

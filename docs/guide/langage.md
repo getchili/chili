@@ -1,6 +1,6 @@
 # Le langage Chili
 
-Chili est volontairement petit : des **entiers**, des **variables**, des **fonctions**, des **conditions**, des **boucles** et des **classes**. Cette page fait le tour de tout sauf les classes, qui ont leur propre page : [Classes](classes.md).
+Chili est volontairement petit : des **entiers**, du **texte**, des **tableaux**, des **variables**, des **fonctions**, des **conditions**, des **boucles** et des **classes**. Cette page fait le tour de l'essentiel ; le texte, les tableaux et la boucle `for` ont leur page, [Textes, tableaux et for](textes-tableaux.md), et les classes aussi : [Classes](classes.md).
 
 Pour tester un programme sans carte, sur le PC :
 
@@ -89,7 +89,7 @@ Pourquoi : Chili ajoute un point-virgule invisible à la fin d'une ligne qui se 
 
 ## 3. Nombres
 
-Chili n'a qu'**un seul type de valeur** : l'**entier signé 32 bits**, de **-2 147 483 648** à **2 147 483 647**. Pas de nombres à virgule, pas de texte (pour l'instant). Les objets (voir [Classes](classes.md)) sont eux aussi rangés dans des variables, comme des nombres.
+Les nombres de Chili sont des **entiers signés 32 bits**, de **-2 147 483 648** à **2 147 483 647**. Pas de nombres à virgule (pour l'instant). Une variable peut aussi contenir du texte (`"bonjour"`), un tableau (`[1, 2, 3]`) ou un objet : voir [Textes, tableaux et for](textes-tableaux.md) et [Classes](classes.md). Pas besoin de dire à l'avance ce qu'une variable contient.
 
 | Écriture      | Valeur  | Remarque                               |
 |---------------|---------|----------------------------------------|
@@ -106,7 +106,7 @@ Chili n'a qu'**un seul type de valeur** : l'**entier signé 32 bits**, de **-2 1
 - **Débordement** : les calculs « font le tour ». `2147483647 + 1` donne `-2147483648`.
 - **Division entière** : `7 / 2` vaut `3`, `-7 / 2` vaut `-3` (on tronque vers zéro). `-7 % 2` vaut `-1`.
 - **Division par zéro** : erreur d'exécution, le programme s'arrête (la carte, elle, continue de fonctionner).
-- **Vrai / faux** : `0` est faux, **toute autre valeur** est vraie. Les comparaisons renvoient `1` ou `0`.
+- **Vrai / faux** : `0` est faux, tout autre nombre est vrai (un texte, un tableau ou un objet aussi). Les comparaisons renvoient `1` ou `0`.
 
 ## 4. Variables
 
@@ -163,8 +163,8 @@ Un nom commence par une lettre ou `_`, puis lettres, chiffres ou `_` (sans accen
 
 Noms **interdits** :
 
-- les mots-clés : `function let if else while return break continue true false class abstract extends constructor this super new` ;
-- les noms des fonctions natives : `print`, `delay`, `millis`, `random`, et le module `gpio`.
+- les mots-clés : `function let if else while for in return break continue true false class abstract extends constructor this super new` ;
+- les noms des fonctions natives et intégrées : `print`, `printc`, `println`, `delay`, `millis`, `random`, `len`, `array`, et les modules `gpio` et `str`.
 
 ## 5. Opérateurs
 
@@ -212,9 +212,9 @@ if temperature > 30 {
 - Pas besoin de parenthèses autour de la condition (elles sont permises : `if (x > 0) {`).
 - Les accolades sont **obligatoires**, même pour une seule instruction.
 
-## 7. Boucles : `while`
+## 7. Boucles : `while` et `for`
 
-Chili n'a qu'une boucle, `while` (il n'y a pas de `for`) :
+`while` répète un bloc tant qu'une condition est vraie :
 
 ```chili
 let i = 0
@@ -250,6 +250,22 @@ while true {
     print(i)         // 1 3 5 7 9
 }
 ```
+
+### `for`
+
+`for` compte ou parcourt une liste pour toi :
+
+```chili
+for i in 0..10 {     // i = 0, 1, …, 9
+    print(i)
+}
+
+for n in [3, 1, 4] { // chaque valeur du tableau
+    print(n)
+}
+```
+
+Tous les détails : [Textes, tableaux et for](textes-tableaux.md#3-la-boucle-for).
 
 ## 8. Fonctions
 
@@ -292,7 +308,7 @@ Une `function` écrite **dans une classe** est une **méthode** : elle s'appelle
 
 ## 9. Fonctions natives
 
-Les fonctions fournies par la carte (`print`, `delay`, `millis`, `random`, `gpio.mode`, `gpio.write`, `gpio.read`) s'appellent comme les autres. Elles sont décrites dans [Fonctions natives](natives.md).
+Les fonctions fournies par la carte (`print`, `delay`, `millis`, `random`, `gpio.mode`, `gpio.write`, `gpio.read`) s'appellent comme les autres. Elles sont décrites dans [Fonctions natives](natives.md). Les fonctions de texte (`str.sub`, `str.find`…) sont dans [Textes, tableaux et for](textes-tableaux.md).
 
 ## 10. Erreurs fréquentes
 
@@ -318,9 +334,10 @@ Les fonctions fournies par la carte (`print`, `delay`, `millis`, `random`, `gpio
 | `prog.chl:3:16: ')' attendu, trouvé fin de ligne` | parenthèse non fermée | ferme la parenthèse sur la même ligne |
 | `prog.chl:5:1: '}' attendu, trouvé fin de fichier` | accolade fermante oubliée | ajoute le `}` manquant (l'indentation aide à le trouver) |
 | `prog.chl:3:18: fin d'instruction attendue, trouvé identifiant 'print'` | deux instructions sur une ligne | va à la ligne, ou sépare-les par `;` |
-| `prog.chl:3:17: caractère inattendu '"'` | texte entre guillemets | Chili ne gère pas encore le texte : `print` n'affiche que des nombres |
-| `prog.chl:3:11: on ne peut affecter qu'une variable ou un champ (this.champ)` | `5 = 3`, ou `=` à gauche d'autre chose qu'un nom | à gauche de `=`, mets un nom de variable ou `this.champ` |
-| `prog.chl:3:9: expression inutilisée : seul un appel (fonction, méthode, new) peut servir d'instruction` | souvent un `for`, qui n'existe pas | utilise `while` |
+| `prog.chl:3:17: chaîne non terminée : il manque le " final` | guillemet fermant oublié, ou texte sur deux lignes | ferme le texte sur la même ligne ; pour aller à la ligne, écris `\n` |
+| `prog.chl:3:11: on ne peut affecter qu'une variable, un champ (this.champ) ou une case (t[i])` | `5 = 3`, ou `=` à gauche d'autre chose qu'un nom | à gauche de `=`, mets un nom de variable, `this.champ` ou `t[i]` |
+| `prog.chl:3:9: expression inutilisée : seul un appel (fonction, méthode, new) peut servir d'instruction` | un calcul seul sur une ligne, comme `x + 1` | range le résultat : `x = x + 1` |
+| `prog.chl:3:13: 'in' attendu, trouvé '='` | `for i = 0` (syntaxe d'autres langages) | écris `for i in 0..10 {` |
 
 ### Erreurs d'exécution
 
@@ -344,10 +361,12 @@ Les plus courantes :
 | `gpio.mode : la broche 34 ne peut pas etre une sortie` | broches 34 à 39 : entrée seulement |
 | `gpio.mode : mode 4 inconnu (0 a 3)` | mode différent de 0, 1, 2, 3 |
 | `appel de allume() sur une valeur qui n'est pas un objet` | méthode appelée sur `0` (objet jamais créé) : voir [Classes](classes.md) |
-| `memoire des objets pleine` | trop d'objets gardés en même temps : voir [Classes](classes.md) |
+| `memoire des objets pleine` | trop d'objets, de textes ou de tableaux gardés en même temps : voir [Classes](classes.md) |
+| `indice 3 hors limites (taille 3)` | case de tableau qui n'existe pas : voir [Textes, tableaux et for](textes-tableaux.md) |
+| `'-' impossible entre une chaine et un entier` | calcul sur une valeur qui ne s'y prête pas : voir [Textes, tableaux et for](textes-tableaux.md#6-erreurs-fréquentes) |
 
 Corrige le programme et renvoie-le avec `chili push`.
 
 ---
 
-Suite : [Classes](classes.md)
+Suite : [Textes, tableaux et for](textes-tableaux.md)

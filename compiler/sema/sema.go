@@ -25,6 +25,8 @@ const (
 	MaxFuncs   = 65535
 	MaxFields  = 255
 	MaxClasses = 255
+	// MaxArrayLit borne un littéral [a, b, …] : ses éléments passent tous par la pile.
+	MaxArrayLit = 1024
 )
 
 type SymKind int
@@ -35,10 +37,11 @@ const (
 	Func
 	Native
 	Class
+	Builtin // len, array : compilées en opcodes
 )
 
 func (k SymKind) String() string {
-	return [...]string{"variable globale", "variable locale", "fonction", "fonction native", "classe"}[k]
+	return [...]string{"variable globale", "variable locale", "fonction", "fonction native", "classe", "fonction intégrée"}[k]
 }
 
 type Symbol struct {
@@ -130,6 +133,10 @@ type Info struct {
 	SuperCalls   map[*ast.SuperCall]*FuncInfo // nil : la classe parente n'a pas de constructeur
 	SuperMethods map[*ast.SuperMethodCall]*FuncInfo
 
+	// ForSlots donne les deux locales cachées de chaque boucle for :
+	// collection et indice (for v in x), ou compteur et fin (for v in a..b).
+	ForSlots map[*ast.ForStmt][2]int
+
 	MainClass  *ClassInfo
 	MainMethod *FuncInfo
 }
@@ -182,6 +189,7 @@ func Check(prog *ast.Program) (*Info, error) {
 			News:         map[*ast.NewExpr]*ClassInfo{},
 			SuperCalls:   map[*ast.SuperCall]*FuncInfo{},
 			SuperMethods: map[*ast.SuperMethodCall]*FuncInfo{},
+			ForSlots:     map[*ast.ForStmt][2]int{},
 		},
 		global:  newScope(nil),
 		classes: map[string]*ClassInfo{},
@@ -207,6 +215,10 @@ func (c *checker) declare(s *scope, id *ast.Ident, sym *Symbol) {
 	}
 	if natives.IsModule(id.Name) {
 		c.errorf(id.Pos(), "'%s' est un module natif, ce nom est réservé", id.Name)
+		return
+	}
+	if _, ok := natives.Builtins[id.Name]; ok {
+		c.errorf(id.Pos(), "'%s' est une fonction intégrée, ce nom est réservé", id.Name)
 		return
 	}
 	if prev, ok := s.syms[id.Name]; ok {
@@ -472,13 +484,19 @@ func (c *checker) checkFunc(fi *FuncInfo) {
 }
 
 func (c *checker) declareLocal(s *scope, id *ast.Ident) {
-	sym := &Symbol{Kind: Local, Name: id.Name, Index: c.fn.NumLocals, Pos: id.Pos()}
-	c.fn.NumLocals++
-	if c.fn.NumLocals == MaxLocals+1 {
-		c.errorf(id.Pos(), "trop de variables locales dans %s (max %d)", c.fn.Name, MaxLocals)
-	}
+	sym := &Symbol{Kind: Local, Name: id.Name, Index: c.newSlot(id.Pos()), Pos: id.Pos()}
 	c.declare(s, id, sym)
 	c.info.Refs[id] = sym
+}
+
+// newSlot réserve un slot local (variable nommée ou cachée).
+func (c *checker) newSlot(pos token.Pos) int {
+	slot := c.fn.NumLocals
+	c.fn.NumLocals++
+	if c.fn.NumLocals == MaxLocals+1 {
+		c.errorf(pos, "trop de variables locales dans %s (max %d)", c.fn.Name, MaxLocals)
+	}
+	return slot
 }
 
 // ---------------------------------------------------------------------------
@@ -505,6 +523,8 @@ func (c *checker) checkStmt(st ast.Stmt, s *scope) {
 			c.checkVar(t, s, "l'affecter")
 		case *ast.FieldExpr:
 			c.checkField(t)
+		case *ast.IndexExpr:
+			c.checkExpr(t, s)
 		}
 
 	case *ast.ExprStmt:
@@ -524,6 +544,19 @@ func (c *checker) checkStmt(st ast.Stmt, s *scope) {
 		c.checkExpr(st.Cond, s)
 		c.loopDepth++
 		c.checkStmts(st.Body.Stmts, newScope(s))
+		c.loopDepth--
+
+	case *ast.ForStmt:
+		// Bornes et collection : évaluées avant la déclaration de la variable.
+		c.checkExpr(st.X, s)
+		if st.To != nil {
+			c.checkExpr(st.To, s)
+		}
+		c.info.ForSlots[st] = [2]int{c.newSlot(st.Pos()), c.newSlot(st.Pos())}
+		vs := newScope(s)
+		c.declareLocal(vs, st.Var)
+		c.loopDepth++
+		c.checkStmts(st.Body.Stmts, newScope(vs))
 		c.loopDepth--
 
 	case *ast.ReturnStmt:
@@ -548,6 +581,8 @@ func (c *checker) checkVar(id *ast.Ident, s *scope, action string) {
 	case sym == nil:
 		if _, _, ok := natives.Lookup(id.Name); ok {
 			c.errorf(id.Pos(), "'%s' est une fonction native : impossible de %s", id.Name, action)
+		} else if _, ok := natives.Builtins[id.Name]; ok {
+			c.errorf(id.Pos(), "'%s' est une fonction intégrée : impossible de %s", id.Name, action)
 		} else {
 			c.errorf(id.Pos(), "'%s' n'est pas déclaré", id.Name)
 		}
@@ -600,7 +635,19 @@ func (c *checker) checkArgs(args []ast.Expr, s *scope, pos token.Pos) {
 
 func (c *checker) checkExpr(e ast.Expr, s *scope) {
 	switch e := e.(type) {
-	case *ast.IntLit, *ast.BoolLit:
+	case *ast.IntLit, *ast.BoolLit, *ast.StringLit:
+
+	case *ast.ArrayLit:
+		for _, x := range e.Elems {
+			c.checkExpr(x, s)
+		}
+		if len(e.Elems) > MaxArrayLit {
+			c.errorf(e.Pos(), "littéral de tableau trop long (%d éléments, max %d) : utilise array(n)", len(e.Elems), MaxArrayLit)
+		}
+
+	case *ast.IndexExpr:
+		c.checkExpr(e.X, s)
+		c.checkExpr(e.Index, s)
 
 	case *ast.Ident:
 		c.checkVar(e, s, "l'utiliser comme valeur")
@@ -732,6 +779,11 @@ func (c *checker) checkCall(call *ast.CallExpr, s *scope) {
 			sym = nativeSymbol(fn.Name)
 		}
 		if sym == nil {
+			if n, ok := natives.Builtins[fn.Name]; ok {
+				sym = &Symbol{Kind: Builtin, Name: fn.Name, Arity: n}
+			}
+		}
+		if sym == nil {
 			if c.fn != nil && c.fn.Class != nil {
 				if _, isMethod := c.fn.Class.Methods[fn.Name]; isMethod {
 					c.errorf(fn.Pos(), "fonction '%s' non déclarée : pour appeler la méthode, écris this.%s(…)", fn.Name, fn.Name)
@@ -745,7 +797,7 @@ func (c *checker) checkCall(call *ast.CallExpr, s *scope) {
 			c.errorf(fn.Pos(), "'%s' est une classe : pour créer un objet, écris new %s(…)", fn.Name, fn.Name)
 			return
 		}
-		if sym.Kind != Func && sym.Kind != Native {
+		if sym.Kind != Func && sym.Kind != Native && sym.Kind != Builtin {
 			c.errorf(fn.Pos(), "'%s' est une %s, pas une fonction", fn.Name, sym.Kind)
 			return
 		}

@@ -1,9 +1,10 @@
-# Spécification de Chili — v1
+# Spécification de Chili — v1.1
 
 Langage généraliste minimal, syntaxe à accolades. Cible : VM bytecode sur microcontrôleur.
 
 Les classes (`class`, `extends`, `abstract`, `new`, `this`, `super`) sont décrites dans
-[classes.md](classes.md). Nécessite le bytecode v2 et le firmware 0.2.0.
+[classes.md](classes.md). Les chaînes, les tableaux et la boucle `for` sont décrits dans
+[strings.md](strings.md). Le langage complet nécessite le bytecode v3 et le firmware 0.3.0.
 
 ## 1. Exemple
 
@@ -30,28 +31,32 @@ class Main {
 - Commentaires : `// jusqu'à la fin de la ligne`.
 - Identifiants : `[A-Za-z_][A-Za-z0-9_]*`.
 - Entiers : décimal `42`, hexadécimal `0x2A`, binaire `0b101010`. `_` autorisé comme séparateur (`1_000_000`).
-- Mots-clés : `function let if else while return break continue true false`
+- Chaînes : `"texte"`, avec les échappements `\n \t \r \0 \" \\ \xHH \u{…}` (voir strings.md).
+- Mots-clés : `function let if else while for in return break continue true false`
   et, pour les classes, `class abstract extends constructor this super new`.
   `fn` (ancienne syntaxe) est refusé : « 'fn' n'existe plus : écris 'function' ».
-- Opérateurs : `+ - * / % & | ^ ~ << >> ! && || == != < <= > >= = += -= *= /= %= .`
-- Délimiteurs : `( ) { } ,  ;`
+- Opérateurs : `+ - * / % & | ^ ~ << >> ! && || == != < <= > >= = += -= *= /= %= . ..`
+- Délimiteurs : `( ) { } [ ] ,  ;`
 
 ### Points-virgules automatiques
 
 Comme en Go : le lexer insère un `;` à la fin d'une ligne si le dernier token de la ligne est
-un identifiant, un littéral, `true`, `false`, `return`, `break`, `continue`, `)` ou `}`.
+un identifiant, un littéral (nombre ou chaîne), `true`, `false`, `this`, `super`, `return`, `break`,
+`continue`, `)`, `]` ou `}`.
 On n'écrit donc jamais de `;` en pratique, sauf pour mettre plusieurs instructions sur une ligne.
 
 Conséquence : l'accolade ouvrante doit être sur la même ligne (`if x {`, pas `if x\n{`).
 
 ## 3. Types
 
-Une seule sorte de valeur : l'**entier signé 32 bits** (`int`). Un objet (voir classes.md) est
-représenté par un entier qui le désigne (*handle*) ; `0` sert de « pas d'objet ». Les booléens sont des entiers :
-`false` = 0, `true` = 1, toute valeur non nulle est vraie. Débordement : arithmétique modulo 2³².
-Division par zéro : erreur d'exécution (la VM arrête le programme).
+Quatre sortes de valeurs, connues de la VM pendant l'exécution (pas de déclaration de type) :
+l'**entier signé 32 bits**, la **chaîne**, le **tableau** et l'**objet** (voir strings.md §2 et
+classes.md). `0` sert de « rien ». Les booléens sont des entiers : `false` = 0, `true` = 1 ; un
+entier non nul est vrai, une chaîne, un tableau ou un objet est toujours vrai. Débordement :
+arithmétique modulo 2³². Division par zéro, opération sur une sorte qui ne convient pas
+(`"a" - 1`) : erreur d'exécution (la VM arrête le programme).
 
-Prévu plus tard : chaînes, tableaux fixes, flottants.
+Prévu plus tard : flottants.
 
 ## 4. Grammaire (EBNF)
 
@@ -62,21 +67,23 @@ funcDecl    = "function" IDENT "(" [ params ] ")" block ;
 params      = IDENT { "," IDENT } ;
 
 block       = "{" { statement ";" } "}" ;
-statement   = letStmt | ifStmt | whileStmt | returnStmt
+statement   = letStmt | ifStmt | whileStmt | forStmt | returnStmt
             | "break" | "continue" | block | simpleStmt ;
 letStmt     = "let" IDENT "=" expr ;
 ifStmt      = "if" expr block [ "else" ( ifStmt | block ) ] ;
 whileStmt   = "while" expr block ;
+forStmt     = "for" IDENT "in" expr [ ".." expr ] block ;
 returnStmt  = "return" [ expr ] ;
-simpleStmt  = expr [ assignOp expr ] ;          (* à gauche : un IDENT ou this.champ *)
+simpleStmt  = expr [ assignOp expr ] ;          (* à gauche : IDENT, this.champ ou x[i] *)
 assignOp    = "=" | "+=" | "-=" | "*=" | "/=" | "%=" ;
 
 expr        = binary ;                          (* voir la table de précédence *)
 unary       = ( "-" | "!" | "~" ) unary | postfix ;
-postfix     = primary { "." IDENT [ "(" [ args ] ")" ] | "(" [ args ] ")" } ;
+postfix     = primary { "." IDENT [ "(" [ args ] ")" ] | "(" [ args ] ")" | "[" expr "]" } ;
 args        = expr { "," expr } ;
-primary     = INT | "true" | "false" | IDENT | "this" | "super"
-            | "new" IDENT "(" [ args ] ")" | "(" expr ")" ;
+primary     = INT | STRING | "true" | "false" | IDENT | "this" | "super"
+            | "new" IDENT "(" [ args ] ")" | "(" expr ")"
+            | "[" [ expr { "," expr } ] "]" ;          (* fins de ligne ignorées entre [ et ] *)
                                                 (* "gpio.write(…)" : native qualifiée ;
                                                    "obj.m(…)" : appel de méthode ;
                                                    "this.x" : champ — voir classes.md *)
@@ -120,7 +127,7 @@ primary     = INT | "true" | "false" | IDENT | "this" | "super"
 
 | Nom              | Args           | Effet                                  |
 |------------------|----------------|----------------------------------------|
-| `print(v)`       | 1              | Affiche un entier (série / stdout)     |
+| `print(v)`       | 1              | Affiche une valeur (entier, chaîne…) sur une ligne |
 | `delay(ms)`      | 1              | Pause en millisecondes                 |
 | `millis()`       | 0              | Millisecondes depuis le démarrage      |
 | `gpio.mode(p,m)` | 2              | 0 = entrée, 1 = sortie, 2 = pull-up, 3 = pull-down |
@@ -129,14 +136,21 @@ primary     = INT | "true" | "false" | IDENT | "this" | "super"
 | `random(min,max)`| 2              | Entier aléatoire dans [min, max], bornes incluses (générateur matériel sur ESP32) |
 | `printc(c)`      | 1              | Affiche le caractère Unicode de code c (UTF-8), sans retour à la ligne |
 | `println()`      | 0              | Termine la ligne                                                        |
+| `str.sub(s,a,b)` | 3              | Sous-chaîne `[a, b[` (strings.md §3)   |
+| `str.find(s,m)`  | 2              | Position de `m` dans `s`, ou -1        |
+| `str.char(c)`    | 1              | Chaîne d'un caractère Unicode          |
+| `str.int(s)`     | 1              | Entier décimal lu dans `s` (0 si invalide) |
+
+Fonctions intégrées (compilées en instructions, ce ne sont pas des natives) : `len(x)`
+(longueur d'une chaîne ou d'un tableau) et `array(n)` (tableau de `n` zéros).
 
 La table de référence est `compiler/natives/natives.go` : l'ID d'une native (encodé dans
 `CALL_NATIVE`) est son index dans la table, et la VM C doit suivre le même ordre. On n'ajoute
 qu'en fin de table pour ne pas casser les programmes déjà compilés.
 
-Les noms des natives (`print`, `delay`…) et des modules (`gpio`) sont réservés : on ne peut pas
-déclarer de variable ou de fonction portant ces noms.
+Les noms des natives (`print`, `delay`…), des modules (`gpio`, `str`) et des fonctions intégrées
+(`len`, `array`) sont réservés : on ne peut pas déclarer de variable ou de fonction portant ces noms.
 
 ## 7. Bytecode
 
-Format figé dans [bytecode.md](bytecode.md) (version 2).
+Format figé dans [bytecode.md](bytecode.md) (version 3).

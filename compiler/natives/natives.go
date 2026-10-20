@@ -14,18 +14,33 @@ import (
 type Native struct {
 	Name  string // "delay" ou "gpio.write"
 	Arity int
+	// Sig donne la sorte attendue de chaque argument (cf. docs/bytecode.md §5) :
+	// 'i' entier, 's' chaîne, 'v' n'importe laquelle. len(Sig) == Arity.
+	Sig string
 }
 
 var Table = []Native{
-	{"print", 1},
-	{"delay", 1},
-	{"millis", 0},
-	{"gpio.mode", 2},
-	{"gpio.write", 2},
-	{"gpio.read", 1},
-	{"random", 2},
-	{"printc", 1},
-	{"println", 0},
+	{"print", 1, "v"},
+	{"delay", 1, "i"},
+	{"millis", 0, ""},
+	{"gpio.mode", 2, "ii"},
+	{"gpio.write", 2, "ii"},
+	{"gpio.read", 1, "i"},
+	{"random", 2, "ii"},
+	{"printc", 1, "i"},
+	{"println", 0, ""},
+	// Chaînes (v3) : fournies par la VM elle-même, pas par la plateforme.
+	{"str.sub", 3, "sii"},
+	{"str.find", 2, "ss"},
+	{"str.char", 1, "i"},
+	{"str.int", 1, "s"},
+}
+
+// Builtins sont les fonctions intégrées au langage, compilées en opcodes
+// (len → LEN, array → NEWARR). Leurs noms sont réservés comme ceux des natives.
+var Builtins = map[string]int{
+	"len":   1,
+	"array": 1,
 }
 
 // Lookup renvoie l'ID et la description d'une native par son nom complet.
@@ -74,10 +89,62 @@ func RandomRange(min, max int32, r uint32) (int32, error) {
 	return int32(int64(min) + int64((uint64(r)*span)>>32)), nil
 }
 
-// CheckChar vérifie le code passé à printc : un caractère Unicode valide.
-func CheckChar(code int32) error {
+// CheckChar vérifie un code de caractère passé à printc ou str.char.
+func CheckChar(name string, code int32) error {
 	if code < 1 || code > 0x10FFFF || (code >= 0xD800 && code <= 0xDFFF) {
-		return fmt.Errorf("printc : %d n'est pas un code de caractère valide", code)
+		return fmt.Errorf("%s : %d n'est pas un code de caractère valide", name, code)
 	}
 	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Natives de chaînes (même comportement que chili_vm.c)
+
+// StrSub renvoie les octets [debut, fin[ de s, bornes ramenées dans [0, len(s)].
+func StrSub(s string, debut, fin int32) string {
+	clamp := func(v int32) int {
+		if v < 0 {
+			return 0
+		}
+		if int(v) > len(s) {
+			return len(s)
+		}
+		return int(v)
+	}
+	a, b := clamp(debut), clamp(fin)
+	if a >= b {
+		return ""
+	}
+	return s[a:b]
+}
+
+// StrFind renvoie la position de la première occurrence de motif, ou -1.
+func StrFind(s, motif string) int32 {
+	return int32(strings.Index(s, motif))
+}
+
+// StrInt lit un entier décimal : espaces autour permis, signe facultatif,
+// repli modulo 2³² au-delà de 32 bits. Renvoie 0 si s n'est pas un nombre.
+func StrInt(s string) int32 {
+	s = strings.Trim(s, " \t\r\n")
+	neg := false
+	if s != "" && (s[0] == '-' || s[0] == '+') {
+		neg = s[0] == '-'
+		s = s[1:]
+	}
+	if s == "" {
+		return 0
+	}
+	var v uint32
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c < '0' || c > '9' {
+			return 0
+		}
+		v = v*10 + uint32(c-'0')
+	}
+	if neg {
+		v = -v
+	}
+	return int32(v)
 }

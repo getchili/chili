@@ -13,8 +13,8 @@ import (
 
 const (
 	Magic      = "CHLB"
-	Version    = 2
-	HeaderSize = 20
+	Version    = 3
+	HeaderSize = 22
 	FuncSize   = 10
 	ClassSize  = 8 // en-tête d'une classe, suivi de 4 octets par méthode
 
@@ -28,6 +28,8 @@ const (
 	PUSH  Op = 0x01
 	PUSH8 Op = 0x02
 	POP   Op = 0x03
+	PUSHS Op = 0x04 // u16 chaîne : → chaîne constante
+	DUP2  Op = 0x05 // a b → a b a b
 
 	LOAD   Op = 0x10
 	STORE  Op = 0x11
@@ -67,6 +69,12 @@ const (
 	GETF  Op = 0x61 // u8 champ          : objet → valeur
 	SETF  Op = 0x62 // u8 champ          : objet valeur →
 	CALLM Op = 0x63 // u16 nom, u8 argc  : objet args → résultat
+
+	NEWARR Op = 0x64 // n → tableau de n zéros
+	MKARR  Op = 0x65 // u16 n : v1 … vn → tableau
+	GETI   Op = 0x66 // x i → v
+	SETI   Op = 0x67 // t i v →
+	LEN    Op = 0x68 // x → n
 )
 
 // Kind est le type d'un opérande.
@@ -92,6 +100,8 @@ var ops = map[Op]OpInfo{
 	PUSH:  {"PUSH", []Kind{I32}},
 	PUSH8: {"PUSH8", []Kind{I8}},
 	POP:   {"POP", nil},
+	PUSHS: {"PUSHS", []Kind{U16}},
+	DUP2:  {"DUP2", nil},
 
 	LOAD:   {"LOAD", []Kind{U8}},
 	STORE:  {"STORE", []Kind{U8}},
@@ -131,6 +141,12 @@ var ops = map[Op]OpInfo{
 	GETF:  {"GETF", []Kind{U8}},
 	SETF:  {"SETF", []Kind{U8}},
 	CALLM: {"CALLM", []Kind{U16, U8}},
+
+	NEWARR: {"NEWARR", nil},
+	MKARR:  {"MKARR", []Kind{U16}},
+	GETI:   {"GETI", nil},
+	SETI:   {"SETI", nil},
+	LEN:    {"LEN", nil},
 }
 
 // Info renvoie la description d'un opcode.
@@ -202,6 +218,7 @@ type Program struct {
 	Funcs      []Func
 	Classes    []Class
 	Names      []string // noms des fonctions, classes et méthodes
+	Strings    []string // chaînes constantes (PUSHS)
 	Entry      uint16
 	Code       []byte
 }
@@ -238,6 +255,7 @@ func (p *Program) Encode() []byte {
 	u32(uint32(len(p.Code)))
 	u16(uint16(len(p.Classes)))
 	u16(uint16(len(p.Names)))
+	u16(uint16(len(p.Strings)))
 	for _, f := range p.Funcs {
 		u32(f.Offset)
 		b.WriteByte(f.NumParams)
@@ -263,6 +281,10 @@ func (p *Program) Encode() []byte {
 	for _, n := range p.Names {
 		b.WriteByte(byte(len(n)))
 		b.WriteString(n)
+	}
+	for _, s := range p.Strings {
+		u16(uint16(len(s)))
+		b.WriteString(s)
 	}
 	b.Write(p.Code)
 	u32(crc32.ChecksumIEEE(b.Bytes()))
@@ -292,6 +314,7 @@ func Decode(data []byte) (*Program, error) {
 	codeSize := int(le.Uint32(body[12:]))
 	numClasses := int(le.Uint16(body[16:]))
 	numNames := int(le.Uint16(body[18:]))
+	numStrings := int(le.Uint16(body[20:]))
 
 	off := HeaderSize
 	need := func(n int) error {
@@ -340,6 +363,18 @@ func Decode(data []byte) (*Program, error) {
 		p.Names = append(p.Names, string(body[off:off+n]))
 		off += n
 	}
+	for i := 0; i < numStrings; i++ {
+		if err := need(2); err != nil {
+			return nil, err
+		}
+		n := int(le.Uint16(body[off:]))
+		off += 2
+		if err := need(n); err != nil {
+			return nil, err
+		}
+		p.Strings = append(p.Strings, string(body[off:off+n]))
+		off += n
+	}
 	if off+codeSize != len(body) {
 		return nil, fmt.Errorf("taille incohérente : %d octets, attendu %d", len(data), off+codeSize+4)
 	}
@@ -371,6 +406,14 @@ func Verify(p *Program, natives NativeArity) error {
 	for i, n := range p.Names {
 		if len(n) > 255 {
 			return fmt.Errorf("nom %d trop long", i)
+		}
+	}
+	if len(p.Strings) > 0xFFFF {
+		return errors.New("trop de chaînes constantes")
+	}
+	for i, s := range p.Strings {
+		if len(s) > 0xFFFF {
+			return fmt.Errorf("chaîne %d trop longue", i)
 		}
 	}
 	for i, c := range p.Classes {
@@ -462,6 +505,10 @@ func verifyFunc(p *Program, fi int, natives NativeArity) error {
 		case CALLM:
 			if int(args[0]) >= len(p.Names) {
 				return fmt.Errorf("CALLM : nom %d invalide à %d", args[0], pc)
+			}
+		case PUSHS:
+			if int(args[0]) >= len(p.Strings) {
+				return fmt.Errorf("PUSHS : chaîne %d inexistante à %d", args[0], pc)
 			}
 		case JMP, JZ, JNZ:
 			jumps = append(jumps, jump{pc, pos + int(args[0])})

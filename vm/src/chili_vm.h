@@ -28,9 +28,9 @@ extern "C" {
 #endif
 
 /* Version du format bytecode supportée. */
-#define CHILI_BYTECODE_VERSION 2
+#define CHILI_BYTECODE_VERSION 3
 
-/* Taille de la pile en valeurs 32 bits : globales + locales + opérandes. */
+/* Taille de la pile en valeurs : globales + locales + opérandes. */
 #ifndef CHILI_STACK_SIZE
 #define CHILI_STACK_SIZE 1024
 #endif
@@ -45,18 +45,21 @@ extern "C" {
 #define CHILI_MAX_FUNCS 256
 #endif
 
-/* Nombre maximal de classes et de noms (fonctions, classes, méthodes). */
+/* Nombre maximal de classes, de noms (fonctions, classes, méthodes) et de chaînes constantes. */
 #ifndef CHILI_MAX_CLASSES
 #define CHILI_MAX_CLASSES 64
 #endif
 #ifndef CHILI_MAX_NAMES
 #define CHILI_MAX_NAMES 512
 #endif
+#ifndef CHILI_MAX_STRINGS
+#define CHILI_MAX_STRINGS 512
+#endif
 
-/* Mémoire des objets, en mots de 32 bits (en-tête + champs de chaque objet).
- * Les objets inaccessibles sont récupérés par un ramasse-miettes quand elle est pleine. */
+/* Mémoire des objets, tableaux et chaînes, en mots de 32 bits. Les blocs
+ * inaccessibles sont récupérés par un ramasse-miettes quand elle est pleine. */
 #ifndef CHILI_HEAP_WORDS
-#define CHILI_HEAP_WORDS 4096
+#define CHILI_HEAP_WORDS 8192
 #endif
 
 typedef enum {
@@ -67,20 +70,45 @@ typedef enum {
     CHILI_ERROR    /* erreur : message dans vm->error */
 } chili_status;
 
+/* Sorte d'une valeur (docs/bytecode.md §2). */
+typedef enum {
+    CHILI_INT = 0,
+    CHILI_STR = 1,
+    CHILI_ARR = 2,
+    CHILI_OBJ = 3
+} chili_tag;
+
+/*
+ * Valeur Chili. Pour CHILI_INT, v est l'entier. Pour une référence, v est
+ * l'offset du bloc dans le tas ; pour une chaîne constante, v vaut
+ * CHILI_STR_CONST | index. Les natives n'ont pas à interpréter v directement :
+ * utiliser chili_str, chili_text et chili_new_str.
+ */
+typedef struct {
+    int32_t v;
+    uint8_t tag; /* chili_tag */
+} chili_value;
+
+#define CHILI_STR_CONST 0x80000000u
+
 typedef struct chili_vm chili_vm;
 
 /*
- * Fonction native. args contient argc valeurs (argc = arité déclarée).
- * Écrire le résultat dans *ret (0 par défaut). Renvoyer :
+ * Fonction native. args contient argc valeurs, déjà vérifiées selon la
+ * signature déclarée (sig). Écrire le résultat dans *ret (l'entier 0 par
+ * défaut). Renvoyer :
  *   CHILI_OK    pour continuer,
  *   CHILI_YIELD pour continuer puis rendre la main à l'hôte,
  *   CHILI_ERROR après avoir appelé chili_fail().
+ * Les arguments restent sur la pile de la VM pendant l'appel : une native peut
+ * allouer (chili_new_str) sans risque pour eux. Une seule allocation par appel.
  */
-typedef chili_status (*chili_native_fn)(chili_vm *vm, const int32_t *args, int32_t *ret);
+typedef chili_status (*chili_native_fn)(chili_vm *vm, const chili_value *args, chili_value *ret);
 
 typedef struct {
     const char *name; /* ex. "gpio.write" */
     uint8_t arity;
+    const char *sig;  /* une lettre par argument : 'i' entier, 's' chaîne, 'v' toute valeur */
     chili_native_fn fn;
 } chili_native;
 
@@ -119,31 +147,35 @@ struct chili_vm {
     uint16_t num_classes;
     chili_class classes[CHILI_MAX_CLASSES];
     uint16_t num_names;
-    const uint8_t *names[CHILI_MAX_NAMES]; /* chaque nom : longueur (u8) puis octets */
+    const uint8_t *names[CHILI_MAX_NAMES];     /* chaque nom : longueur (u8) puis octets */
+    uint16_t num_strings;
+    const uint8_t *strings[CHILI_MAX_STRINGS]; /* chaque chaîne : longueur (u16) puis octets */
 
     const chili_native *natives;
     uint16_t num_natives;
     void *user; /* donnée libre pour les natives */
 
     /* État d'exécution. Les globales occupent stack[0 .. num_globals-1]. */
-    int32_t stack[CHILI_STACK_SIZE];
+    chili_value stack[CHILI_STACK_SIZE];
     uint16_t sp;
     chili_frame frames[CHILI_MAX_FRAMES];
     uint8_t num_frames;
     chili_status state;
 
-    /* Objets : blocs [en-tête][champs…]. En-tête = taille (16 bits bas,
-     * en-tête compris) | (classe + 1) << 16, classe + 1 = 0 pour un bloc libre. */
+    /* Tas : blocs [en-tête][contenu…]. En-tête = taille en mots (16 bits bas,
+     * en-tête compris) | genre << 16 : 0 libre, classe + 1 pour un objet,
+     * 0xFFFE chaîne, 0xFFFF tableau (docs/bytecode.md §7). */
     uint32_t heap[CHILI_HEAP_WORDS];
+    uint8_t heap_tags[(CHILI_HEAP_WORDS + 3) / 4];      /* sorte de chaque mot, 2 bits */
     uint32_t heap_starts[(CHILI_HEAP_WORDS + 31) / 32]; /* début de bloc */
     uint32_t heap_marks[(CHILI_HEAP_WORDS + 31) / 32];  /* ramasse-miettes */
     uint32_t gc_runs;
 
-    char error[128];
+    char error[160];
 };
 
 /*
- * Vérifie et charge un fichier .chlb (en-tête, CRC, contrôles du §4 de
+ * Vérifie et charge un fichier .chlb (en-tête, CRC, contrôles du §8 de
  * docs/bytecode.md, natives connues avec la bonne arité), puis prépare
  * l'exécution depuis la fonction d'entrée. data doit rester valide tant que
  * la VM l'utilise. Renvoie CHILI_OK ou CHILI_ERROR (message dans vm->error).
@@ -163,6 +195,35 @@ chili_status chili_fail(chili_vm *vm, const char *fmt, ...);
 /* CRC-32 IEEE (même algorithme que Go hash/crc32.ChecksumIEEE). */
 uint32_t chili_crc32(const uint8_t *data, size_t size);
 
+/* ------------------------------------------------------------------------ */
+/* Valeurs, pour les natives                                                */
+
+/* Construit un entier. */
+static inline chili_value chili_int(int32_t v)
+{
+    chili_value r;
+    r.v = v;
+    r.tag = CHILI_INT;
+    return r;
+}
+
+/* Octets d'une chaîne (non terminée par 0) et longueur dans *len, ou NULL si v n'est pas une chaîne. */
+const uint8_t *chili_str(const chili_vm *vm, chili_value v, uint32_t *len);
+
+/*
+ * Crée une chaîne de len octets (copiés depuis bytes, qui peut être NULL pour
+ * des zéros) et la place dans *out. Peut lancer le ramasse-miettes.
+ * Renvoie CHILI_ERROR (via chili_fail) si la mémoire est pleine.
+ */
+chili_status chili_new_str(chili_vm *vm, const uint8_t *bytes, uint32_t len, chili_value *out);
+
+/*
+ * Texte d'une valeur, tel que l'affiche print : renvoie un pointeur vers les
+ * octets (dans buf ou dans la chaîne elle-même) et leur nombre dans *len.
+ * buf doit faire au moins 64 octets.
+ */
+const char *chili_text(const chili_vm *vm, chili_value v, char *buf, size_t size, uint32_t *len);
+
 /*
  * Pour la native random(min, max) : ramène une valeur aléatoire 32 bits r
  * dans [min, max], bornes incluses (même formule que natives.RandomRange en Go).
@@ -176,6 +237,12 @@ chili_status chili_random_range(chili_vm *vm, int32_t min, int32_t max, uint32_t
  * chili_fail si le code n'est pas un caractère valide.
  */
 int chili_utf8(chili_vm *vm, int32_t code, char out[4]);
+
+/* Natives str.* fournies par la VM : à placer telles quelles dans la table de la plateforme. */
+chili_status chili_native_str_sub(chili_vm *vm, const chili_value *args, chili_value *ret);
+chili_status chili_native_str_find(chili_vm *vm, const chili_value *args, chili_value *ret);
+chili_status chili_native_str_char(chili_vm *vm, const chili_value *args, chili_value *ret);
+chili_status chili_native_str_int(chili_vm *vm, const chili_value *args, chili_value *ret);
 
 #ifdef __cplusplus
 }

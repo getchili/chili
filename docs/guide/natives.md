@@ -4,7 +4,7 @@ Les fonctions natives sont fournies par la carte. On les appelle comme n'importe
 
 | Fonction             | Arguments          | Renvoie            | Effet                                          |
 |----------------------|--------------------|--------------------|------------------------------------------------|
-| `print(v)`           | un nombre          | 0                  | affiche le nombre sur une ligne                |
+| `print(v)`           | une valeur         | 0                  | affiche un nombre ou un texte sur une ligne    |
 | `delay(ms)`          | millisecondes      | 0                  | attend `ms` millisecondes                      |
 | `millis()`           | aucun              | millisecondes      | temps écoulé depuis le démarrage de la carte   |
 | `random(min, max)`   | deux bornes        | un nombre          | nombre au hasard entre `min` et `max` inclus   |
@@ -18,14 +18,16 @@ Les extraits ci-dessous se placent dans `function main()` (ou dans une autre fon
 
 ## `print(v)`
 
-Affiche un nombre entier, suivi d'un retour à la ligne. La sortie apparaît dans le terminal pendant `chili push`, avec `chili monitor`, ou dans la console de Chili Lab.
+Affiche une valeur, suivie d'un retour à la ligne. La sortie apparaît dans le terminal pendant `chili push`, avec `chili monitor`, ou dans la console de Chili Lab.
 
 ```chili
 print(42)
 print(millis())
+print("bonjour")
+print("il est " + millis() + " ms")
 ```
 
-Chili ne gère pas encore le texte : `print("bonjour")` n'est pas possible.
+Un tableau s'affiche `<tableau 3>` et un objet `<NomDeLaClasse>`. Le texte demande le firmware **0.3.0** : voir [Textes, tableaux et for](textes-tableaux.md).
 
 ## `delay(ms)`
 
@@ -66,7 +68,7 @@ Le compteur dépasse la limite des entiers 32 bits au bout d'environ 24 jours et
 
 ## `printc(code)` et `println()`
 
-`print` n'affiche que des nombres. Pour écrire du **texte**, on affiche les caractères un par un avec `printc`, en donnant leur code (65 = `A`, 97 = `a`, 48 = `0`, 33 = `!`…), puis `println()` termine la ligne.
+`printc` affiche **un caractère** à partir de son code (65 = `A`, 97 = `a`, 48 = `0`, 33 = `!`…), sans aller à la ligne ; `println()` termine la ligne. Pour afficher un texte entier, `print("…")` est plus simple ; `printc` sert à construire une ligne morceau par morceau.
 
 ```chili
 printc(72)    // H

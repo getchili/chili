@@ -34,66 +34,70 @@ static int64_t now_ms(void)
 static int64_t start_ms;
 static int32_t pins[64];
 
-static chili_status native_print(chili_vm *vm, const int32_t *args, int32_t *ret)
+static chili_status native_print(chili_vm *vm, const chili_value *args, chili_value *ret)
 {
-    (void)vm; (void)ret;
-    printf("%ld\n", (long)args[0]);
+    char buf[64];
+    uint32_t len;
+    const char *text = chili_text(vm, args[0], buf, sizeof buf, &len);
+    (void)ret;
+    fwrite(text, 1, len, stdout);
+    putchar('\n');
     return CHILI_OK;
 }
 
-static chili_status native_delay(chili_vm *vm, const int32_t *args, int32_t *ret)
+static chili_status native_delay(chili_vm *vm, const chili_value *args, chili_value *ret)
 {
     (void)vm; (void)ret;
-    if (args[0] > 0) {
+    if (args[0].v > 0) {
         fflush(stdout);
-        sleep_ms(args[0]);
+        sleep_ms(args[0].v);
     }
     return CHILI_OK;
 }
 
-static chili_status native_millis(chili_vm *vm, const int32_t *args, int32_t *ret)
+static chili_status native_millis(chili_vm *vm, const chili_value *args, chili_value *ret)
 {
     (void)vm; (void)args;
-    *ret = (int32_t)(now_ms() - start_ms);
+    *ret = chili_int((int32_t)(now_ms() - start_ms));
     return CHILI_OK;
 }
 
-static chili_status native_gpio_mode(chili_vm *vm, const int32_t *args, int32_t *ret)
+static chili_status native_gpio_mode(chili_vm *vm, const chili_value *args, chili_value *ret)
 {
     (void)vm; (void)ret;
-    printf("[gpio] broche %ld en mode %ld\n", (long)args[0], (long)args[1]);
+    printf("[gpio] broche %ld en mode %ld\n", (long)args[0].v, (long)args[1].v);
     return CHILI_OK;
 }
 
-static chili_status native_gpio_write(chili_vm *vm, const int32_t *args, int32_t *ret)
+static chili_status native_gpio_write(chili_vm *vm, const chili_value *args, chili_value *ret)
 {
     (void)ret;
-    if (args[0] < 0 || args[0] >= 64)
-        return chili_fail(vm, "broche %ld invalide", (long)args[0]);
-    pins[args[0]] = args[1];
-    printf("[gpio] broche %ld = %ld\n", (long)args[0], (long)args[1]);
+    if (args[0].v < 0 || args[0].v >= 64)
+        return chili_fail(vm, "broche %ld invalide", (long)args[0].v);
+    pins[args[0].v] = args[1].v;
+    printf("[gpio] broche %ld = %ld\n", (long)args[0].v, (long)args[1].v);
     return CHILI_OK;
 }
 
-static chili_status native_gpio_read(chili_vm *vm, const int32_t *args, int32_t *ret)
+static chili_status native_gpio_read(chili_vm *vm, const chili_value *args, chili_value *ret)
 {
-    if (args[0] < 0 || args[0] >= 64)
-        return chili_fail(vm, "broche %ld invalide", (long)args[0]);
-    *ret = pins[args[0]];
+    if (args[0].v < 0 || args[0].v >= 64)
+        return chili_fail(vm, "broche %ld invalide", (long)args[0].v);
+    *ret = chili_int(pins[args[0].v]);
     return CHILI_OK;
 }
 
-static chili_status native_random(chili_vm *vm, const int32_t *args, int32_t *ret)
+static chili_status native_random(chili_vm *vm, const chili_value *args, chili_value *ret)
 {
     /* Deux tirages de rand() (souvent limité à 15 bits) pour couvrir 32 bits. */
     uint32_t r = ((uint32_t)rand() << 17) ^ ((uint32_t)rand() << 2) ^ (uint32_t)rand();
-    return chili_random_range(vm, args[0], args[1], r, ret);
+    return chili_random_range(vm, args[0].v, args[1].v, r, &ret->v);
 }
 
-static chili_status native_printc(chili_vm *vm, const int32_t *args, int32_t *ret)
+static chili_status native_printc(chili_vm *vm, const chili_value *args, chili_value *ret)
 {
     char buf[4];
-    int n = chili_utf8(vm, args[0], buf);
+    int n = chili_utf8(vm, args[0].v, buf);
     (void)ret;
     if (n == 0)
         return CHILI_ERROR;
@@ -101,18 +105,18 @@ static chili_status native_printc(chili_vm *vm, const int32_t *args, int32_t *re
     return CHILI_OK;
 }
 
-static chili_status native_println(chili_vm *vm, const int32_t *args, int32_t *ret)
+static chili_status native_println(chili_vm *vm, const chili_value *args, chili_value *ret)
 {
     (void)vm; (void)args; (void)ret;
     putchar('\n');
     return CHILI_OK;
 }
 
-#define X(id, name, arity, fn) { name, arity, fn },
+#define X(id, name, arity, sig, fn) { name, arity, sig, fn },
 static const chili_native natives[] = { CHILI_NATIVES(X) };
 #undef X
 
-static chili_vm vm; /* ~8 Ko : statique plutôt que sur la pile C */
+static chili_vm vm; /* ~55 Ko : statique plutôt que sur la pile C */
 
 int main(int argc, char **argv)
 {

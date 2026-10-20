@@ -165,36 +165,39 @@ func fail(path string, err error) {
 func runProgram(prog *bytecode.Program) {
 	start := time.Now()
 	pins := map[int32]int32{}
-	vm := refvm.New(prog, func(id int, args []int32) (int32, error) {
+	var vm *refvm.VM
+	vm = refvm.New(prog, func(id int, v []refvm.Value) (refvm.Value, error) {
+		zero := refvm.IntV(0)
 		switch natives.Name(id) {
 		case "print":
-			fmt.Println(args[0])
+			fmt.Println(vm.Text(v[0]))
 		case "delay":
-			if args[0] > 0 {
-				time.Sleep(time.Duration(args[0]) * time.Millisecond)
+			if v[0].I > 0 {
+				time.Sleep(time.Duration(v[0].I) * time.Millisecond)
 			}
 		case "millis":
-			return int32(time.Since(start).Milliseconds()), nil
+			return refvm.IntV(int32(time.Since(start).Milliseconds())), nil
 		case "gpio.mode":
-			fmt.Printf("[gpio] broche %d en mode %d\n", args[0], args[1])
+			fmt.Printf("[gpio] broche %d en mode %d\n", v[0].I, v[1].I)
 		case "gpio.write":
-			pins[args[0]] = args[1]
-			fmt.Printf("[gpio] broche %d = %d\n", args[0], args[1])
+			pins[v[0].I] = v[1].I
+			fmt.Printf("[gpio] broche %d = %d\n", v[0].I, v[1].I)
 		case "gpio.read":
-			return pins[args[0]], nil
+			return refvm.IntV(pins[v[0].I]), nil
 		case "random":
-			return natives.RandomRange(args[0], args[1], rand.Uint32())
+			r, err := natives.RandomRange(v[0].I, v[1].I, rand.Uint32())
+			return refvm.IntV(r), err
 		case "printc":
-			if err := natives.CheckChar(args[0]); err != nil {
-				return 0, err
+			if err := natives.CheckChar("printc", v[0].I); err != nil {
+				return zero, err
 			}
-			fmt.Print(string(rune(args[0])))
+			fmt.Print(string(rune(v[0].I)))
 		case "println":
 			fmt.Println()
 		default:
-			return 0, fmt.Errorf("native %s non simulée", natives.Name(id))
+			return zero, fmt.Errorf("native %s non simulée", natives.Name(id))
 		}
-		return 0, nil
+		return zero, nil
 	})
 	if err := vm.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)

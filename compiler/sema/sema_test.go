@@ -366,3 +366,49 @@ func TestErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestStringsArraysForSema(t *testing.T) {
+	src := `class Main {
+    function main() {
+        let t = [1, 2]
+        for x in t { let y = x }
+        for x in 0..len(t) { print(x) }
+        let x = 5
+    }
+}`
+	info, err := Check(mustParse(t, src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// this, t, 2 cachées + x, y, 2 cachées + x, puis x : 1 + 1 + 3 + 1 + 3 + 1
+	if got := funcNamed(info, "Main.main").NumLocals; got != 10 {
+		t.Errorf("NumLocals = %d, attendu 10", got)
+	}
+	if len(info.ForSlots) != 2 {
+		t.Errorf("ForSlots : %d boucles, attendu 2", len(info.ForSlots))
+	}
+
+	bad := []struct{ src, want string }{
+		{"let len = 1" + mainClass, "'len' est une fonction intégrée, ce nom est réservé"},
+		{"function array(n) { }" + mainClass, "'array' est une fonction intégrée"},
+		{"let str = 1" + mainClass, "'str' est un module natif"},
+		{"class Main { function main() { for i in 0..3 { }\n print(i) } }", "'i' n'est pas déclaré"},
+		{"class Main { function main() { for i in 0..i { } } }", "'i' n'est pas déclaré"},
+		{"class Main { function main() { print(len(1, 2)) } }", "len attend 1 argument(s), 2 fourni(s)"},
+		{"class Main { function main() { print(str.upper(\"a\")) } }", "le module 'str' n'a pas de fonction 'upper'"},
+		{"class Main { function main() { let x = len } }", "'len' est une fonction intégrée : impossible de l'utiliser comme valeur"},
+		{"class Main { function main() { for i in 0..3 { let i = 2 } } }", ""},
+	}
+	for _, tt := range bad {
+		_, err := Check(mustParse(t, tt.src))
+		if tt.want == "" {
+			if err != nil {
+				t.Errorf("%q : erreur inattendue %v", tt.src, err)
+			}
+			continue
+		}
+		if err == nil || !strings.Contains(err.Error(), tt.want) {
+			t.Errorf("%q : erreur %v, attendu %q", tt.src, err, tt.want)
+		}
+	}
+}

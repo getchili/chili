@@ -6,6 +6,7 @@ package ast
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/getchili/chili/compiler/token"
@@ -97,7 +98,7 @@ func (s *LetStmt) declNode()      {}
 func (s *LetStmt) String() string { return fmt.Sprintf("(let %s %s)", s.Name.Name, s.Value) }
 
 // AssignStmt couvre '=' et les affectations composées ('+=', ...).
-// Target est un *Ident (variable) ou un *FieldExpr (this.champ).
+// Target est un *Ident (variable), un *FieldExpr (this.champ) ou un *IndexExpr (t[i]).
 type AssignStmt struct {
 	Target Expr
 	Op     token.Kind // ASSIGN, ADD_ASSIGN, ...
@@ -158,6 +159,24 @@ func (s *ReturnStmt) String() string {
 	return fmt.Sprintf("(return %s)", s.Value)
 }
 
+// ForStmt est « for Var in X { … } » ou, si To n'est pas nil, « for Var in X..To { … } ».
+type ForStmt struct {
+	ForPos token.Pos
+	Var    *Ident
+	X      Expr
+	To     Expr
+	Body   *Block
+}
+
+func (s *ForStmt) Pos() token.Pos { return s.ForPos }
+func (s *ForStmt) stmtNode()      {}
+func (s *ForStmt) String() string {
+	if s.To != nil {
+		return fmt.Sprintf("(for %s (.. %s %s) %s)", s.Var.Name, s.X, s.To, s.Body)
+	}
+	return fmt.Sprintf("(for %s %s %s)", s.Var.Name, s.X, s.Body)
+}
+
 // BranchStmt représente `break` ou `continue`.
 type BranchStmt struct {
 	TokPos token.Pos
@@ -199,6 +218,36 @@ type IntLit struct {
 func (e *IntLit) Pos() token.Pos { return e.LitPos }
 func (e *IntLit) exprNode()      {}
 func (e *IntLit) String() string { return fmt.Sprint(e.Value) }
+
+// StringLit est une chaîne constante ; Value est déjà décodée (échappements).
+type StringLit struct {
+	LitPos token.Pos
+	Value  string
+}
+
+func (e *StringLit) Pos() token.Pos { return e.LitPos }
+func (e *StringLit) exprNode()      {}
+func (e *StringLit) String() string { return strconv.Quote(e.Value) }
+
+// ArrayLit est « [a, b, c] ».
+type ArrayLit struct {
+	LBrack token.Pos
+	Elems  []Expr
+}
+
+func (e *ArrayLit) Pos() token.Pos { return e.LBrack }
+func (e *ArrayLit) exprNode()      {}
+func (e *ArrayLit) String() string { return "(array" + argString(e.Elems) + ")" }
+
+// IndexExpr est « X[Index] ».
+type IndexExpr struct {
+	X     Expr
+	Index Expr
+}
+
+func (e *IndexExpr) Pos() token.Pos { return e.X.Pos() }
+func (e *IndexExpr) exprNode()      {}
+func (e *IndexExpr) String() string { return fmt.Sprintf("(index %s %s)", e.X, e.Index) }
 
 type BoolLit struct {
 	LitPos token.Pos

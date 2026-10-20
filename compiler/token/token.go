@@ -11,6 +11,7 @@ const (
 
 	IDENT
 	INT
+	STRING
 
 	// Mots-clés
 	FUNCTION
@@ -25,6 +26,8 @@ const (
 	IF
 	ELSE
 	WHILE
+	FOR
+	IN
 	RETURN
 	BREAK
 	CONTINUE
@@ -60,13 +63,16 @@ const (
 	DIV_ASSIGN // /=
 	MOD_ASSIGN // %=
 
-	DOT // .
+	DOT    // .
+	DOTDOT // ..
 
 	// Délimiteurs
 	LPAREN    // (
 	RPAREN    // )
 	LBRACE    // {
 	RBRACE    // }
+	LBRACKET  // [
+	RBRACKET  // ]
 	COMMA     // ,
 	SEMICOLON // ; (explicite ou inséré automatiquement)
 )
@@ -76,6 +82,7 @@ var names = [...]string{
 	EOF:     "EOF",
 	IDENT:   "IDENT",
 	INT:     "INT",
+	STRING:  "STRING",
 
 	FUNCTION:    "function",
 	CLASS:       "class",
@@ -89,6 +96,8 @@ var names = [...]string{
 	IF:          "if",
 	ELSE:        "else",
 	WHILE:       "while",
+	FOR:         "for",
+	IN:          "in",
 	RETURN:      "return",
 	BREAK:       "break",
 	CONTINUE:    "continue",
@@ -123,12 +132,15 @@ var names = [...]string{
 	DIV_ASSIGN: "/=",
 	MOD_ASSIGN: "%=",
 
-	DOT: ".",
+	DOT:    ".",
+	DOTDOT: "..",
 
 	LPAREN:    "(",
 	RPAREN:    ")",
 	LBRACE:    "{",
 	RBRACE:    "}",
+	LBRACKET:  "[",
+	RBRACKET:  "]",
 	COMMA:     ",",
 	SEMICOLON: ";",
 }
@@ -153,6 +165,8 @@ var keywords = map[string]Kind{
 	"if":          IF,
 	"else":        ELSE,
 	"while":       WHILE,
+	"for":         FOR,
+	"in":          IN,
 	"return":      RETURN,
 	"break":       BREAK,
 	"continue":    CONTINUE,
@@ -186,6 +200,8 @@ func (t Token) String() string {
 	switch t.Kind {
 	case IDENT, INT, ILLEGAL:
 		return fmt.Sprintf("%s(%s)", t.Kind, t.Lit)
+	case STRING:
+		return fmt.Sprintf("STRING(%q)", t.Lit)
 	}
 	return t.Kind.String()
 }

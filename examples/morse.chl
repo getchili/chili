@@ -1,0 +1,56 @@
+// morse.chl — fait clignoter un message en morse sur la LED de la carte
+//
+// Montre les chaînes, les tableaux et la boucle for.
+// Firmware 0.3.0 ou plus récent.
+
+let led = 2
+let message = "SOS CHILI"
+let unite = 150 // durée d'un point, en ms
+
+// Codes morse des lettres A à Z, dans l'ordre de l'alphabet.
+let codes = [
+    ".-", "-...", "-.-.", "-..", ".", "..-.", "--.", "....", "..",
+    ".---", "-.-", ".-..", "--", "-.", "---", ".--.", "--.-", ".-.",
+    "...", "-", "..-", "...-", ".--", "-..-", "-.--", "--.."
+]
+
+function signal(duree) {
+    gpio.write(led, 1)
+    delay(duree)
+    gpio.write(led, 0)
+    delay(unite) // silence entre deux signaux d'une même lettre
+}
+
+// Envoie une lettre (code de A = 65 à Z = 90) et renvoie son code morse.
+function lettre(c) {
+    let code = codes[c - 65]
+    for s in code {
+        if s == 46 { // '.'
+            signal(unite)
+        } else {
+            signal(3 * unite)
+        }
+    }
+    delay(2 * unite) // fin de lettre : 3 unités de silence en tout
+    return code
+}
+
+class Main {
+    function main() {
+        gpio.mode(led, 1)
+        print("Message : " + message)
+        while true {
+            let ligne = ""
+            for c in message {
+                if c == 32 { // espace entre deux mots
+                    ligne = ligne + "/ "
+                    delay(4 * unite)
+                } else {
+                    ligne = ligne + lettre(c) + " "
+                }
+            }
+            print(ligne)
+            delay(2000)
+        }
+    }
+}
