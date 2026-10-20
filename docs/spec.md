@@ -127,6 +127,8 @@ primary     = INT | "true" | "false" | IDENT | "this" | "super"
 | `gpio.write(p,v)`| 2              | Écrit 0/1 sur une broche               |
 | `gpio.read(p)`   | 1              | Lit une broche                         |
 | `random(min,max)`| 2              | Entier aléatoire dans [min, max], bornes incluses (générateur matériel sur ESP32) |
+| `printc(c)`      | 1              | Affiche le caractère Unicode de code c (UTF-8), sans retour à la ligne |
+| `println()`      | 0              | Termine la ligne                                                        |
 
 La table de référence est `compiler/natives/natives.go` : l'ID d'une native (encodé dans
 `CALL_NATIVE`) est son index dans la table, et la VM C doit suivre le même ordre. On n'ajoute

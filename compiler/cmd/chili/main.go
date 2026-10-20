@@ -184,6 +184,13 @@ func runProgram(prog *bytecode.Program) {
 			return pins[args[0]], nil
 		case "random":
 			return natives.RandomRange(args[0], args[1], rand.Uint32())
+		case "printc":
+			if err := natives.CheckChar(args[0]); err != nil {
+				return 0, err
+			}
+			fmt.Print(string(rune(args[0])))
+		case "println":
+			fmt.Println()
 		default:
 			return 0, fmt.Errorf("native %s non simulée", natives.Name(id))
 		}

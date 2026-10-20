@@ -112,7 +112,7 @@
           }
         },
         {
-          "match": "\\b(print|delay|millis|random)\\b(?=\\s*\\()",
+          "match": "\\b(print|printc|println|delay|millis|random)\\b(?=\\s*\\()",
           "name": "support.function.builtin.chili"
         }
       ]

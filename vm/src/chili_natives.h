@@ -21,7 +21,9 @@
     X(CHILI_N_GPIO_MODE,  "gpio.mode",    2, native_gpio_mode)          \
     X(CHILI_N_GPIO_WRITE, "gpio.write",   2, native_gpio_write)         \
     X(CHILI_N_GPIO_READ,  "gpio.read",    1, native_gpio_read)          \
-    X(CHILI_N_RANDOM,     "random",       2, native_random)
+    X(CHILI_N_RANDOM,     "random",       2, native_random)             \
+    X(CHILI_N_PRINTC,     "printc",       1, native_printc)             \
+    X(CHILI_N_PRINTLN,    "println",      0, native_println)
 
 #define CHILI_X_ENUM(id, name, arity, fn) id,
 enum { CHILI_NATIVES(CHILI_X_ENUM) CHILI_NUM_NATIVES };

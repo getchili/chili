@@ -24,6 +24,8 @@ var Table = []Native{
 	{"gpio.write", 2},
 	{"gpio.read", 1},
 	{"random", 2},
+	{"printc", 1},
+	{"println", 0},
 }
 
 // Lookup renvoie l'ID et la description d'une native par son nom complet.
@@ -70,4 +72,12 @@ func RandomRange(min, max int32, r uint32) (int32, error) {
 	}
 	span := uint64(int64(max)-int64(min)) + 1 // de 1 à 2^32
 	return int32(int64(min) + int64((uint64(r)*span)>>32)), nil
+}
+
+// CheckChar vérifie le code passé à printc : un caractère Unicode valide.
+func CheckChar(code int32) error {
+	if code < 1 || code > 0x10FFFF || (code >= 0xD800 && code <= 0xDFFF) {
+		return fmt.Errorf("printc : %d n'est pas un code de caractère valide", code)
+	}
+	return nil
 }

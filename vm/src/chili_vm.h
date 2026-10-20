@@ -170,6 +170,13 @@ uint32_t chili_crc32(const uint8_t *data, size_t size);
  */
 chili_status chili_random_range(chili_vm *vm, int32_t min, int32_t max, uint32_t r, int32_t *out);
 
+/*
+ * Pour la native printc(code) : encode le caractère Unicode code en UTF-8
+ * dans out (4 octets max) et renvoie le nombre d'octets. Renvoie 0 après
+ * chili_fail si le code n'est pas un caractère valide.
+ */
+int chili_utf8(chili_vm *vm, int32_t code, char out[4]);
+
 #ifdef __cplusplus
 }
 #endif

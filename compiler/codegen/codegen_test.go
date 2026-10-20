@@ -31,12 +31,21 @@ func run(t *testing.T, src string) (string, error) {
 	var out strings.Builder
 	printID, _, _ := natives.Lookup("print")
 	randomID, _, _ := natives.Lookup("random")
+	printcID, _, _ := natives.Lookup("printc")
+	printlnID, _, _ := natives.Lookup("println")
 	vm := refvm.New(decoded, func(id int, args []int32) (int32, error) {
 		switch id {
 		case printID:
 			fmt.Fprintln(&out, args[0])
 		case randomID:
 			return natives.RandomRange(args[0], args[1], rand.Uint32())
+		case printcID:
+			if err := natives.CheckChar(args[0]); err != nil {
+				return 0, err
+			}
+			out.WriteString(string(rune(args[0])))
+		case printlnID:
+			out.WriteString("\n")
 		}
 		return 0, nil
 	})
@@ -226,6 +235,20 @@ var programTests = []struct {
 			print(0b1010)
 		}`, "127 128 -128 -129 1000000 10"},
 
+	{"printc et println", `
+class Main {
+    function main() {
+        printc(72)
+        printc(105)
+        printc(0x00E9)
+        println()
+        printc(79)
+        printc(75)
+        println()
+        print(3)
+    }
+}`, "Hié OK 3"},
+
 	{"random", `fn main() {
 			let i = 0
 			let ok = 1
@@ -377,6 +400,7 @@ func TestRuntimeErrors(t *testing.T) {
 		{"modulo par zéro", "fn main() { let z = 0\n print(1 % z) }", "modulo par zéro"},
 		{"récursion infinie", "fn f(n) { return f(n + 1) }\nfn main() { f(0) }", "trop d'appels imbriqués"},
 		{"random à l'envers", "fn main() { print(random(6, 1)) }", "plus petit que le minimum"},
+		{"printc invalide", "fn main() { printc(-1) }", "n'est pas un code de caractère valide"},
 		{"méthode sur un nombre", "class A { function f() {} }\nclass Main { function main() { let x = 5\n x.f() } }",
 			"appel de f() sur une valeur qui n'est pas un objet"},
 		{"méthode absente de la classe réelle", "class A { function f() {} }\nclass B { function g() {} }\nclass Main { function main() { let o = new B()\n o.f() } }",

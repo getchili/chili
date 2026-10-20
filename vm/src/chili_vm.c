@@ -79,6 +79,35 @@ chili_status chili_random_range(chili_vm *vm, int32_t min, int32_t max, uint32_t
     return CHILI_OK;
 }
 
+int chili_utf8(chili_vm *vm, int32_t code, char out[4])
+{
+    if (code < 1 || code > 0x10FFFF || (code >= 0xD800 && code <= 0xDFFF)) {
+        chili_fail(vm, "printc : %ld n'est pas un code de caractere valide", (long)code);
+        return 0;
+    }
+    uint32_t c = (uint32_t)code;
+    if (c < 0x80) {
+        out[0] = (char)c;
+        return 1;
+    }
+    if (c < 0x800) {
+        out[0] = (char)(0xC0 | (c >> 6));
+        out[1] = (char)(0x80 | (c & 0x3F));
+        return 2;
+    }
+    if (c < 0x10000) {
+        out[0] = (char)(0xE0 | (c >> 12));
+        out[1] = (char)(0x80 | ((c >> 6) & 0x3F));
+        out[2] = (char)(0x80 | (c & 0x3F));
+        return 3;
+    }
+    out[0] = (char)(0xF0 | (c >> 18));
+    out[1] = (char)(0x80 | ((c >> 12) & 0x3F));
+    out[2] = (char)(0x80 | ((c >> 6) & 0x3F));
+    out[3] = (char)(0x80 | (c & 0x3F));
+    return 4;
+}
+
 chili_status chili_fail(chili_vm *vm, const char *fmt, ...)
 {
     va_list ap;

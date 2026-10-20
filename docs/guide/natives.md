@@ -8,6 +8,8 @@ Les fonctions natives sont fournies par la carte. On les appelle comme n'importe
 | `delay(ms)`          | millisecondes      | 0                  | attend `ms` millisecondes                      |
 | `millis()`           | aucun              | millisecondes      | temps écoulé depuis le démarrage de la carte   |
 | `random(min, max)`   | deux bornes        | un nombre          | nombre au hasard entre `min` et `max` inclus   |
+| `printc(code)`       | code de caractère  | 0                  | affiche un caractère, sans retour à la ligne   |
+| `println()`          | aucun              | 0                  | termine la ligne                               |
 | `gpio.mode(p, m)`    | broche, mode (0-3) | 0                  | règle une broche en entrée ou en sortie        |
 | `gpio.write(p, v)`   | broche, valeur     | 0                  | met une sortie à 1 (3,3 V) ou à 0 (0 V)        |
 | `gpio.read(p)`       | broche             | 0 ou 1             | lit l'état d'une broche                        |
@@ -61,6 +63,23 @@ while true {
 ```
 
 Le compteur dépasse la limite des entiers 32 bits au bout d'environ 24 jours et repasse en négatif. Compare toujours avec une **différence** (`millis() - prochain >= 0`) plutôt que `millis() >= prochain` : la différence reste juste même au passage de la limite.
+
+## `printc(code)` et `println()`
+
+`print` n'affiche que des nombres. Pour écrire du **texte**, on affiche les caractères un par un avec `printc`, en donnant leur code (65 = `A`, 97 = `a`, 48 = `0`, 33 = `!`…), puis `println()` termine la ligne.
+
+```chili
+printc(72)    // H
+printc(105)   // i
+printc(33)    // !
+println()     // affiche « Hi! » sur une ligne
+```
+
+Les accents et autres caractères Unicode marchent aussi : `printc(233)` affiche `é`. Un code invalide (négatif, 0…) arrête le programme avec une erreur.
+
+L'exemple `password.chl` s'en sert pour afficher un mot de passe tiré au hasard.
+
+> `printc` et `println` demandent le firmware **0.2.1** ou plus récent (`chili flash`, ou le bandeau orange de Chili Lab).
 
 ## `random(min, max)`
 

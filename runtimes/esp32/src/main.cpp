@@ -65,6 +65,14 @@ static void broadcast(const String &s)
 
 static void reply(Channel &ch, const String &s) { ch.io->println(s); }
 
+/* Envoie des octets bruts (sans fin de ligne) sur l'USB et le client WiFi. */
+static void emit(const char *buf, size_t n)
+{
+    Serial.write((const uint8_t *)buf, n);
+    if (client && client.connected())
+        client.write((const uint8_t *)buf, n);
+}
+
 /* ------------------------------------------------------------------------ */
 /* Natives (même ordre que vm/src/chili_natives.h)                          */
 
@@ -123,6 +131,22 @@ static chili_status native_gpio_read(chili_vm *vm, const int32_t *args, int32_t 
     if (pin < 0 || !GPIO_IS_VALID_GPIO(pin))
         return chili_fail(vm, "gpio.read : broche %ld invalide", (long)pin);
     *ret = digitalRead(pin);
+    return CHILI_OK;
+}
+
+static chili_status native_printc(chili_vm *vm, const int32_t *args, int32_t *)
+{
+    char buf[4];
+    int n = chili_utf8(vm, args[0], buf);
+    if (n == 0)
+        return CHILI_ERROR;
+    emit(buf, (size_t)n);
+    return CHILI_OK;
+}
+
+static chili_status native_println(chili_vm *, const int32_t *, int32_t *)
+{
+    emit("\r\n", 2);
     return CHILI_OK;
 }
 

@@ -90,6 +90,24 @@ static chili_status native_random(chili_vm *vm, const int32_t *args, int32_t *re
     return chili_random_range(vm, args[0], args[1], r, ret);
 }
 
+static chili_status native_printc(chili_vm *vm, const int32_t *args, int32_t *ret)
+{
+    char buf[4];
+    int n = chili_utf8(vm, args[0], buf);
+    (void)ret;
+    if (n == 0)
+        return CHILI_ERROR;
+    fwrite(buf, 1, (size_t)n, stdout);
+    return CHILI_OK;
+}
+
+static chili_status native_println(chili_vm *vm, const int32_t *args, int32_t *ret)
+{
+    (void)vm; (void)args; (void)ret;
+    putchar('\n');
+    return CHILI_OK;
+}
+
 #define X(id, name, arity, fn) { name, arity, fn },
 static const chili_native natives[] = { CHILI_NATIVES(X) };
 #undef X
