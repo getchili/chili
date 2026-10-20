@@ -57,9 +57,33 @@ type Object struct {
 	Fields []Value
 }
 
-// IntV et StrV construisent des valeurs (utile aux natives).
+// IntV, StrV et ArrV construisent des valeurs (utile aux natives).
 func IntV(i int32) Value  { return Value{K: Int, I: i} }
 func StrV(s string) Value { return Value{K: Str, S: s} }
+func ArrV(elems ...Value) Value {
+	if elems == nil {
+		elems = []Value{}
+	}
+	return Value{K: Arr, A: &Array{Elems: elems}}
+}
+
+// Bytes convertit une chaîne, ou un tableau d'entiers de 0 à 255, en octets
+// (données de i2c.write). ok = false pour toute autre valeur.
+func Bytes(v Value) (b []byte, ok bool) {
+	switch v.K {
+	case Str:
+		return []byte(v.S), true
+	case Arr:
+		for _, e := range v.A.Elems {
+			if e.K != Int || e.I < 0 || e.I > 255 {
+				return nil, false
+			}
+			b = append(b, byte(e.I))
+		}
+		return b, true
+	}
+	return nil, false
+}
 
 // truthy applique la règle de vérité : un entier est vrai s'il est non nul,
 // une référence est toujours vraie.

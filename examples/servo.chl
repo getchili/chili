@@ -1,0 +1,28 @@
+// servo.chl — fait balayer un servomoteur de 0 à 180 degrés, et retour.
+//
+// Montre : servo.write(broche, angle) pour positionner un servo.
+// Matériel : un servo (type SG90) — fil de signal (orange) sur GPIO 13,
+// rouge sur 5V (ou VIN), marron sur GND. Firmware 0.4.0 ou plus récent.
+
+let broche = 13
+
+class Main {
+    function main() {
+        while true {
+            for angle in 0..181 {
+                servo.write(broche, angle)
+                delay(10)
+            }
+            for angle in 0..181 {
+                servo.write(broche, 180 - angle)
+                delay(10)
+            }
+            // Positions fixes : le servo y va et y reste
+            for angle in [0, 90, 180, 90] {
+                print("angle : " + angle)
+                servo.write(broche, angle)
+                delay(800)
+            }
+        }
+    }
+}

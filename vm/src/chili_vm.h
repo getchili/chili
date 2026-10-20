@@ -218,6 +218,30 @@ const uint8_t *chili_str(const chili_vm *vm, chili_value v, uint32_t *len);
 chili_status chili_new_str(chili_vm *vm, const uint8_t *bytes, uint32_t len, chili_value *out);
 
 /*
+ * Crée un tableau de n cases valant l'entier 0 et le place dans *out.
+ * Peut lancer le ramasse-miettes. Renvoie CHILI_ERROR (via chili_fail) si la
+ * mémoire est pleine.
+ */
+chili_status chili_new_arr(chili_vm *vm, uint32_t n, chili_value *out);
+
+/* Nombre de cases d'un tableau, ou -1 si v n'est pas un tableau. */
+int32_t chili_arr_len(const chili_vm *vm, chili_value v);
+
+/* Lit / écrit la case i (0 <= i < chili_arr_len) d'un tableau. */
+chili_value chili_arr_get(const chili_vm *vm, chili_value arr, uint32_t i);
+void chili_arr_set(chili_vm *vm, chili_value arr, uint32_t i, chili_value v);
+
+/*
+ * Copie dans buf (max octets) une chaîne, ou un tableau d'entiers de 0 à 255,
+ * et met sa taille dans *len. Pour i2c.write et les natives semblables : who
+ * est le nom de la native, utilisé dans le message d'erreur.
+ */
+chili_status chili_bytes(chili_vm *vm, const char *who, chili_value v, uint8_t *buf, uint32_t max, uint32_t *len);
+
+/* Vérifie min <= v <= max, sinon erreur « who : what v hors de min..max ». */
+chili_status chili_check_range(chili_vm *vm, const char *who, const char *what, int32_t v, int32_t min, int32_t max);
+
+/*
  * Texte d'une valeur, tel que l'affiche print : renvoie un pointeur vers les
  * octets (dans buf ou dans la chaîne elle-même) et leur nombre dans *len.
  * buf doit faire au moins 64 octets.

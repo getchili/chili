@@ -136,6 +136,11 @@ Un exemple par notion. Ceux marqués **PC** se testent sans carte avec `chili ru
 | `compteur.chl`   | compter les appuis sur BOOT (détecter un appui, éviter les rebonds)             |
 | `chrono.chl`     | faire plusieurs choses à des rythmes différents avec `millis()`                 |
 | `de.chl`         | dé électronique : `random`, à chaque appui la LED clignote de 1 à 6 fois        |
+| `respire.chl`    | la LED s'allume et s'éteint en douceur : [`pwm.write`](materiel.md)             |
+| `potentiometre.chl` | un potentiomètre règle la luminosité : [`adc.read`](materiel.md)             |
+| `buzzer.chl`     | une mélodie sur un buzzer : [`pwm.tone`](materiel.md)                           |
+| `servo.chl`      | un servomoteur balaie de 0 à 180° : [`servo.write`](materiel.md)                |
+| `i2c.chl`        | cherche les modules I2C branchés (écran, capteur) : [`i2c.scan`](materiel.md)   |
 
 **Le langage**
 

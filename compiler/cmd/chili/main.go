@@ -4,7 +4,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"strings"
@@ -161,45 +160,11 @@ func fail(path string, err error) {
 	os.Exit(1)
 }
 
-// runProgram exécute le programme avec des natives simulées sur PC.
+// runProgram exécute le programme avec des natives simulées sur PC (sim.go).
 func runProgram(prog *bytecode.Program) {
-	start := time.Now()
-	pins := map[int32]int32{}
-	var vm *refvm.VM
-	vm = refvm.New(prog, func(id int, v []refvm.Value) (refvm.Value, error) {
-		zero := refvm.IntV(0)
-		switch natives.Name(id) {
-		case "print":
-			fmt.Println(vm.Text(v[0]))
-		case "delay":
-			if v[0].I > 0 {
-				time.Sleep(time.Duration(v[0].I) * time.Millisecond)
-			}
-		case "millis":
-			return refvm.IntV(int32(time.Since(start).Milliseconds())), nil
-		case "gpio.mode":
-			fmt.Printf("[gpio] broche %d en mode %d\n", v[0].I, v[1].I)
-		case "gpio.write":
-			pins[v[0].I] = v[1].I
-			fmt.Printf("[gpio] broche %d = %d\n", v[0].I, v[1].I)
-		case "gpio.read":
-			return refvm.IntV(pins[v[0].I]), nil
-		case "random":
-			r, err := natives.RandomRange(v[0].I, v[1].I, rand.Uint32())
-			return refvm.IntV(r), err
-		case "printc":
-			if err := natives.CheckChar("printc", v[0].I); err != nil {
-				return zero, err
-			}
-			fmt.Print(string(rune(v[0].I)))
-		case "println":
-			fmt.Println()
-		default:
-			return zero, fmt.Errorf("native %s non simulée", natives.Name(id))
-		}
-		return zero, nil
-	})
-	if err := vm.Run(); err != nil {
+	sim := newSimulator(time.Now())
+	sim.vm = refvm.New(prog, sim.call)
+	if err := sim.vm.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

@@ -1,0 +1,35 @@
+// i2c.chl — cherche les périphériques branchés sur le bus I2C.
+//
+// Montre : i2c.scan, i2c.write, i2c.read, les adresses en hexadécimal.
+// Matériel : un module I2C (écran OLED, capteur BME280…) avec SDA sur GPIO 21,
+// SCL sur GPIO 22, VCC sur 3V3 et GND sur GND. Firmware 0.4.0 ou plus récent.
+// Autres broches : i2c.begin(sda, scl) avant le premier échange.
+
+// Écrit un octet en hexadécimal sur 2 chiffres : 60 → "3C".
+function hexa(n) {
+    let chiffres = "0123456789ABCDEF"
+    return str.char(chiffres[n / 16]) + str.char(chiffres[n % 16])
+}
+
+class Main {
+    function main() {
+        let trouves = i2c.scan()
+        if len(trouves) == 0 {
+            print("aucun périphérique : vérifie SDA (21), SCL (22) et l'alimentation")
+            return
+        }
+        for adresse in trouves {
+            print("périphérique à l'adresse 0x" + hexa(adresse))
+        }
+
+        // Exemple d'échange avec le premier : envoyer le numéro d'un registre (0),
+        // puis lire un octet. Ce que vaut ce registre dépend du composant.
+        let adresse = trouves[0]
+        if i2c.write(adresse, [0]) {
+            let octets = i2c.read(adresse, 1)
+            if len(octets) == 1 {
+                print("registre 0 de 0x" + hexa(adresse) + " : 0x" + hexa(octets[0]))
+            }
+        }
+    }
+}

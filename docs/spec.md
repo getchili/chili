@@ -141,6 +141,20 @@ primary     = INT | STRING | "true" | "false" | IDENT | "this" | "super"
 | `str.char(c)`    | 1              | Chaîne d'un caractère Unicode          |
 | `str.int(s)`     | 1              | Entier décimal lu dans `s` (0 si invalide) |
 
+| `pwm.write(p,v)` | 2              | PWM 5 kHz, rapport cyclique `v` de 0 à 255 |
+| `pwm.tone(p,hz)` | 2              | Signal carré de `hz` Hz (20 à 20 000), 0 = arrêt |
+| `servo.write(p,a)` | 2            | Servo : impulsion de 500 à 2500 µs à 50 Hz pour `a` de 0 à 180 |
+| `adc.read(p)`    | 1              | Entrée analogique, de 0 à 4095         |
+| `adc.mv(p)`      | 1              | Entrée analogique, en millivolts (calibrée) |
+| `i2c.begin(sda,scl)` | 2          | Broches du bus I2C (défaut : 21, 22), 100 kHz |
+| `i2c.scan()`     | 0              | Tableau des adresses (1 à 126) qui répondent |
+| `i2c.write(adr,d)` | 2            | Envoie `d` (chaîne ou tableau d'octets, 128 max) ; 1 si ACK, sinon 0 |
+| `i2c.read(adr,n)` | 2             | Lit `n` octets (128 max) ; tableau des octets reçus |
+
+Les natives `pwm.*`, `servo.*`, `adc.*` et `i2c.*` demandent le firmware 0.4.0 (même bytecode v3).
+Une broche en PWM (`pwm`, `servo`) le reste jusqu'au prochain `gpio.mode` sur elle ; 8 broches
+au plus en même temps.
+
 Fonctions intégrées (compilées en instructions, ce ne sont pas des natives) : `len(x)`
 (longueur d'une chaîne ou d'un tableau) et `array(n)` (tableau de `n` zéros).
 
@@ -148,7 +162,7 @@ La table de référence est `compiler/natives/natives.go` : l'ID d'une native (e
 `CALL_NATIVE`) est son index dans la table, et la VM C doit suivre le même ordre. On n'ajoute
 qu'en fin de table pour ne pas casser les programmes déjà compilés.
 
-Les noms des natives (`print`, `delay`…), des modules (`gpio`, `str`) et des fonctions intégrées
+Les noms des natives (`print`, `delay`…), des modules (`gpio`, `str`, `pwm`, `servo`, `adc`, `i2c`) et des fonctions intégrées
 (`len`, `array`) sont réservés : on ne peut pas déclarer de variable ou de fonction portant ces noms.
 
 ## 7. Bytecode

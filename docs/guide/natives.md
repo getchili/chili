@@ -14,6 +14,8 @@ Les fonctions natives sont fournies par la carte. On les appelle comme n'importe
 | `gpio.write(p, v)`   | broche, valeur     | 0                  | met une sortie à 1 (3,3 V) ou à 0 (0 V)        |
 | `gpio.read(p)`       | broche             | 0 ou 1             | lit l'état d'une broche                        |
 
+Luminosité (`pwm.write`), son (`pwm.tone`), servomoteurs (`servo.write`), entrées analogiques (`adc.read`) et bus I2C (`i2c.*`) : voir [Luminosité, son, servos, capteurs et I2C](materiel.md).
+
 Les extraits ci-dessous se placent dans `function main()` (ou dans une autre fonction). Les exemples complets commencent par `let` ou `class`.
 
 ## `print(v)`
@@ -132,6 +134,8 @@ Renvoie `0` ou `1` selon la tension sur la broche.
 | 1 et 3                          | port USB série : les utiliser coupe la liaison avec le PC             |
 | 12 et 15                        | utilisables, mais influencent le démarrage : à éviter pour débuter    |
 
+Le firmware refuse les broches 1, 3 et 6 à 11 (`gpio.mode : la broche 1 sert au port USB (TX)…`) : sans cette protection, la carte perdrait la liaison avec le PC ou planterait.
+
 Quand le programme est arrêté (`chili stop`, `chili kill`, nouveau `push`), toutes les broches qu'il avait mises en sortie sont remises à 0 puis en entrée : une LED ou un relais s'éteint.
 
 ## Exemple : LED
@@ -220,4 +224,4 @@ class Main {
 
 ---
 
-Suite : [Commandes](commandes.md)
+Suite : [Luminosité, son, servos, capteurs et I2C](materiel.md)

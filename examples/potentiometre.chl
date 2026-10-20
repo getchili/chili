@@ -1,0 +1,27 @@
+// potentiometre.chl — un potentiomètre règle la luminosité de la LED.
+//
+// Montre : adc.read (valeur de 0 à 4095), adc.mv (tension en millivolts),
+// pwm.write, et comment passer d'une échelle à une autre.
+// Matériel : un potentiomètre, broche du milieu sur GPIO 34, les deux autres
+// sur 3V3 et GND ; la LED intégrée (GPIO 2). Firmware 0.4.0 ou plus récent.
+// Sur le PC (chili run), l'entrée analogique est simulée : elle monte et descend toute seule.
+
+let pot = 34
+let led = 2
+
+class Main {
+    function main() {
+        let dernier = millis()
+        while true {
+            let valeur = adc.read(pot)          // 0 à 4095
+            pwm.write(led, valeur * 255 / 4095) // ramené à 0..255
+
+            // Deux fois par seconde : afficher la mesure
+            if millis() - dernier >= 500 {
+                print(valeur + " (" + adc.mv(pot) + " mV)")
+                dernier = millis()
+            }
+            delay(20)
+        }
+    }
+}

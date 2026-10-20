@@ -12,10 +12,11 @@ Suis les pages dans l'ordre la première fois :
 4. [Textes, tableaux et `for`](textes-tableaux.md) — `"bonjour"`, `[1, 2, 3]`, `for v in t`.
 5. [Classes](classes.md) — regrouper données et fonctions en objets (`class`, `new`, `extends`).
 6. [Fonctions natives](natives.md) — `print`, `delay`, `millis`, `random`, broches GPIO.
-7. [Commandes](commandes.md) — toutes les commandes de `chili`, avec leurs sorties.
-8. [WiFi](wifi.md) — envoyer tes programmes sans câble.
-9. [Dépannage](depannage.md) — quand quelque chose ne marche pas.
-10. [Chili Lab](chili-lab.md) — l'application de bureau, tout à la souris.
+7. [Luminosité, son, servos, capteurs et I2C](materiel.md) — `pwm.write`, `pwm.tone`, `servo.write`, `adc.read`, `i2c.*`.
+8. [Commandes](commandes.md) — toutes les commandes de `chili`, avec leurs sorties.
+9. [WiFi](wifi.md) — envoyer tes programmes sans câble.
+10. [Dépannage](depannage.md) — quand quelque chose ne marche pas.
+11. [Chili Lab](chili-lab.md) — l'application de bureau, tout à la souris.
 
 ## Ce qu'il te faut
 

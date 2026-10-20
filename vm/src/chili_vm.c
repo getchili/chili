@@ -330,6 +330,64 @@ chili_status chili_new_str(chili_vm *vm, const uint8_t *bytes, uint32_t len, chi
     return CHILI_OK;
 }
 
+chili_status chili_new_arr(chili_vm *vm, uint32_t n, chili_value *out)
+{
+    uint32_t o = (n >= MAX_BLOCK) ? CHILI_HEAP_WORDS : heap_alloc(vm, n + 1, KIND_ARR);
+    if (o == CHILI_HEAP_WORDS)
+        return chili_fail(vm, "memoire des objets pleine (%u mots)", (unsigned)CHILI_HEAP_WORDS);
+    *out = make_ref(o, CHILI_ARR);
+    return CHILI_OK;
+}
+
+int32_t chili_arr_len(const chili_vm *vm, chili_value v)
+{
+    if (v.tag != CHILI_ARR)
+        return -1;
+    return (int32_t)BLK_SIZE(vm->heap[v.v]) - 1;
+}
+
+chili_value chili_arr_get(const chili_vm *vm, chili_value arr, uint32_t i)
+{
+    return heap_get(vm, (uint32_t)arr.v + 1 + i);
+}
+
+void chili_arr_set(chili_vm *vm, chili_value arr, uint32_t i, chili_value v)
+{
+    heap_set(vm, (uint32_t)arr.v + 1 + i, v);
+}
+
+chili_status chili_check_range(chili_vm *vm, const char *who, const char *what, int32_t v, int32_t min, int32_t max)
+{
+    if (v < min || v > max)
+        return chili_fail(vm, "%s : %s %ld hors de %ld..%ld", who, what, (long)v, (long)min, (long)max);
+    return CHILI_OK;
+}
+
+chili_status chili_bytes(chili_vm *vm, const char *who, chili_value v, uint8_t *buf, uint32_t max, uint32_t *len)
+{
+    uint32_t n;
+    const uint8_t *s = chili_str(vm, v, &n);
+    int32_t na = chili_arr_len(vm, v);
+    if (!s && na < 0)
+        return chili_fail(vm, "%s : les donnees doivent etre une chaine ou un tableau d'octets (0 a 255)", who);
+    if (!s)
+        n = (uint32_t)na;
+    if (chili_check_range(vm, who, "taille", (int32_t)n, 0, (int32_t)max) != CHILI_OK)
+        return CHILI_ERROR;
+    for (uint32_t i = 0; i < n; i++) {
+        if (s) {
+            buf[i] = s[i];
+            continue;
+        }
+        chili_value e = chili_arr_get(vm, v, i);
+        if (e.tag != CHILI_INT || e.v < 0 || e.v > 255)
+            return chili_fail(vm, "%s : les donnees doivent etre une chaine ou un tableau d'octets (0 a 255)", who);
+        buf[i] = (uint8_t)e.v;
+    }
+    *len = n;
+    return CHILI_OK;
+}
+
 const char *chili_text(const chili_vm *vm, chili_value v, char *buf, size_t size, uint32_t *len)
 {
     int n = 0;
@@ -465,7 +523,7 @@ static chili_status verify_func(chili_vm *vm, uint16_t fi)
         case OP_CALL_NATIVE: {
             uint16_t id = rd16(a);
             if (id >= vm->num_natives || vm->natives[id].fn == NULL)
-                return chili_fail(vm, "native %u non disponible sur cette carte", id);
+                return chili_fail(vm, "native n.%u inconnue de ce firmware : mets-le a jour avec chili flash", id);
             if (vm->natives[id].arity != a[2])
                 return chili_fail(vm, "native %s : %u argument(s) attendu(s), %u fourni(s)",
                                   vm->natives[id].name, vm->natives[id].arity, a[2]);

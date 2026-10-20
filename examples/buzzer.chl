@@ -1,0 +1,30 @@
+// buzzer.chl — joue une mélodie sur un buzzer.
+//
+// Montre : pwm.tone(broche, fréquence) pour produire un son, pwm.tone(broche, 0)
+// pour l'arrêter, et deux tableaux lus ensemble (notes et durées).
+// Matériel : un buzzer passif entre GPIO 25 et GND. Firmware 0.4.0 ou plus récent.
+
+let buzzer = 25
+
+// Fréquences des notes, en Hz
+let DO = 262
+let RE = 294
+let MI = 330
+let FA = 349
+let SOL = 392
+
+// « Au clair de la lune » : une note et sa durée (en ms) à chaque position.
+let notes  = [DO, DO, DO, RE, MI, RE, DO, MI, RE, RE, DO]
+let durees = [400, 400, 400, 400, 800, 800, 400, 400, 400, 400, 1200]
+
+class Main {
+    function main() {
+        for i in 0..len(notes) {
+            pwm.tone(buzzer, notes[i])
+            delay(durees[i])
+            pwm.tone(buzzer, 0)     // un court silence sépare les notes
+            delay(50)
+        }
+        print("fin de la mélodie")
+    }
+}

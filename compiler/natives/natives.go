@@ -34,6 +34,45 @@ var Table = []Native{
 	{"str.find", 2, "ss"},
 	{"str.char", 1, "i"},
 	{"str.int", 1, "s"},
+	// Matériel (firmware 0.4.0).
+	{"pwm.write", 2, "ii"},
+	{"pwm.tone", 2, "ii"},
+	{"servo.write", 2, "ii"},
+	{"adc.read", 1, "i"},
+	{"adc.mv", 1, "i"},
+	{"i2c.begin", 2, "ii"},
+	{"i2c.scan", 0, ""},
+	{"i2c.write", 2, "iv"},
+	{"i2c.read", 2, "ii"},
+}
+
+// Limites des natives matériel, communes au firmware et à la simulation PC.
+const (
+	PWMMax      = 255   // pwm.write : rapport cyclique de 0 à 255
+	ToneMax     = 20000 // pwm.tone : fréquence en Hz (0 = silence)
+	ServoMax    = 180   // servo.write : angle en degrés
+	I2CMaxBytes = 128   // i2c.write / i2c.read : octets par transfert
+)
+
+// CheckRange vérifie qu'un argument de native est dans [min, max].
+func CheckRange(native, what string, v, min, max int32) error {
+	if v < min || v > max {
+		return fmt.Errorf("%s : %s %d hors de %d..%d", native, what, v, min, max)
+	}
+	return nil
+}
+
+// CheckTone vérifie une fréquence de pwm.tone : 0 (silence) ou de 20 à ToneMax Hz.
+func CheckTone(hz int32) error {
+	if hz != 0 && (hz < 20 || hz > ToneMax) {
+		return fmt.Errorf("pwm.tone : fréquence %d Hz hors de 20..%d (0 pour couper le son)", hz, ToneMax)
+	}
+	return nil
+}
+
+// ServoPulse renvoie la durée d'impulsion (µs) pour un angle de 0 à 180°.
+func ServoPulse(angle int32) int32 {
+	return 500 + angle*2000/ServoMax
 }
 
 // Builtins sont les fonctions intégrées au langage, compilées en opcodes

@@ -113,6 +113,62 @@ func TestCVMRuntimeErrors(t *testing.T) {
 	}
 }
 
+// Natives matériel simulées par vm/host/main.c : contrôles des arguments et
+// création de tableaux depuis une native (chili_new_arr, chili_bytes).
+func TestCVMHardwareNatives(t *testing.T) {
+	exe := buildCVM(t)
+	out, errOut, ok := runCVM(t, exe, `class Main {
+    function main() {
+        pwm.write(2, 128)
+        pwm.tone(4, 440)
+        pwm.tone(4, 0)
+        servo.write(13, 90)
+        let a = adc.read(34)
+        print(a >= 0 && a <= 4095)
+        print(adc.mv(34) <= 3300)
+        print(len(i2c.scan()))
+        print(i2c.write(0x3C, [0, 0xAF]))
+        print(i2c.write(0x3C, "abc"))
+        print(len(i2c.read(0x3C, 4)))
+    }
+}`)
+	if !ok {
+		t.Fatalf("échec : %s", errOut)
+	}
+	for _, want := range []string{"[pwm] broche 2 = 128/255", "son 440 Hz", "silence", "impulsion 1500 us"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("sortie sans %q :\n%s", want, out)
+		}
+	}
+	var prints []string
+	for _, l := range strings.Split(strings.TrimSpace(out), "\n") {
+		if !strings.HasPrefix(l, "[") {
+			prints = append(prints, strings.TrimSpace(l))
+		}
+	}
+	if got := strings.Join(prints, " "); got != "1 1 0 0 0 0" {
+		t.Errorf("prints = %q, attendu \"1 1 0 0 0 0\"", got)
+	}
+
+	tests := []struct{ src, want string }{
+		{"pwm.write(2, 300)", "pwm.write : valeur 300 hors de 0..255"},
+		{"pwm.tone(2, 5)", "pwm.tone : frequence 5 Hz hors de 20..20000"},
+		{"servo.write(2, 181)", "servo.write : angle 181 hors de 0..180"},
+		{"i2c.write(200, [1])", "i2c.write : adresse 200 hors de 0..127"},
+		{"i2c.write(0x3C, [1, 300])", "i2c.write : les donnees doivent etre une chaine ou un tableau d'octets"},
+		{"i2c.write(0x3C, 5)", "i2c.write : les donnees doivent etre une chaine ou un tableau d'octets"},
+		{"i2c.write(0x3C, array(200))", "i2c.write : taille 200 hors de 0..128"},
+		{"i2c.read(0x3C, 500)", "i2c.read : taille 500 hors de 0..128"},
+		{"pwm.write(\"2\", 1)", "pwm.write : l'argument 1 doit etre un entier"},
+	}
+	for _, tt := range tests {
+		_, errOut, ok := runCVM(t, exe, "class Main { function main() { "+tt.src+" } }")
+		if ok || !strings.Contains(errOut, tt.want) {
+			t.Errorf("%s : stderr %q, attendu un échec contenant %q", tt.src, errOut, tt.want)
+		}
+	}
+}
+
 func TestCVMRejectsCorruptFile(t *testing.T) {
 	exe := buildCVM(t)
 	prog, err := Compile([]byte(legacy("fn main() { print(1) }")))

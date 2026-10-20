@@ -1,0 +1,22 @@
+// respire.chl — la LED s'allume et s'éteint en douceur, comme une respiration.
+//
+// Montre : pwm.write(broche, 0..255) pour régler la luminosité d'une LED.
+// Matériel : la LED intégrée (GPIO 2). Firmware 0.4.0 ou plus récent.
+
+let led = 2
+
+class Main {
+    function main() {
+        while true {
+            for v in 0..256 {           // de 0 (éteinte) à 255 (à fond)
+                pwm.write(led, v)
+                delay(4)
+            }
+            for v in 0..256 {
+                pwm.write(led, 255 - v)
+                delay(4)
+            }
+            delay(300)
+        }
+    }
+}

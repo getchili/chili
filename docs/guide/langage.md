@@ -164,7 +164,7 @@ Un nom commence par une lettre ou `_`, puis lettres, chiffres ou `_` (sans accen
 Noms **interdits** :
 
 - les mots-clés : `function let if else while for in return break continue true false class abstract extends constructor this super new` ;
-- les noms des fonctions natives et intégrées : `print`, `printc`, `println`, `delay`, `millis`, `random`, `len`, `array`, et les modules `gpio` et `str`.
+- les noms des fonctions natives et intégrées : `print`, `printc`, `println`, `delay`, `millis`, `random`, `len`, `array`, et les modules `gpio`, `str`, `pwm`, `servo`, `adc` et `i2c`.
 
 ## 5. Opérateurs
 
