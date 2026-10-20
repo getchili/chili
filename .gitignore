@@ -1,0 +1,5 @@
+chili.exe
+*.chlb
+*.vsix
+dist/
+runtimes/esp32/.pio/

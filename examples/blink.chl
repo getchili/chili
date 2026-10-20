@@ -1,0 +1,14 @@
+// blink.chl — fait clignoter la LED intégrée de l'ESP32 (GPIO 2)
+
+let led_pin = 2
+let period = 500
+
+fn main() {
+    gpio.mode(led_pin, 1)
+    while true {
+        gpio.write(led_pin, 1)
+        delay(period)
+        gpio.write(led_pin, 0)
+        delay(period)
+    }
+}

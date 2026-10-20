@@ -1,0 +1,104 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Chili",
+  "scopeName": "source.chili",
+  "fileTypes": ["chl"],
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#function-declaration" },
+    { "include": "#keywords" },
+    { "include": "#constants" },
+    { "include": "#numbers" },
+    { "include": "#native-calls" },
+    { "include": "#calls" },
+    { "include": "#operators" },
+    { "include": "#punctuation" },
+    { "include": "#variables" }
+  ],
+  "repository": {
+    "comments": {
+      "match": "//.*$",
+      "name": "comment.line.double-slash.chili"
+    },
+    "function-declaration": {
+      "match": "\\b(fn)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+      "captures": {
+        "1": { "name": "storage.type.function.chili" },
+        "2": { "name": "entity.name.function.chili" }
+      }
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "match": "\\b(if|else|while)\\b",
+          "name": "keyword.control.conditional.chili"
+        },
+        {
+          "match": "\\b(return|break|continue)\\b",
+          "name": "keyword.control.flow.chili"
+        },
+        {
+          "match": "\\b(let)\\b",
+          "name": "storage.type.chili"
+        },
+        {
+          "match": "\\b(fn)\\b",
+          "name": "storage.type.function.chili"
+        }
+      ]
+    },
+    "constants": {
+      "match": "\\b(true|false)\\b",
+      "name": "constant.language.boolean.chili"
+    },
+    "numbers": {
+      "patterns": [
+        { "match": "\\b0[xX][0-9A-Fa-f_]+\\b", "name": "constant.numeric.hex.chili" },
+        { "match": "\\b0[bB][01_]+\\b", "name": "constant.numeric.binary.chili" },
+        { "match": "\\b[0-9][0-9_]*\\b", "name": "constant.numeric.decimal.chili" }
+      ]
+    },
+    "native-calls": {
+      "patterns": [
+        {
+          "match": "\\b([A-Za-z_][A-Za-z0-9_]*)\\s*(\\.)\\s*([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": { "name": "entity.name.namespace.chili" },
+            "2": { "name": "punctuation.accessor.chili" },
+            "3": { "name": "support.function.chili" }
+          }
+        },
+        {
+          "match": "\\b(print|delay|millis)\\b",
+          "name": "support.function.builtin.chili"
+        }
+      ]
+    },
+    "calls": {
+      "match": "\\b([A-Za-z_][A-Za-z0-9_]*)\\s*(?=\\()",
+      "captures": {
+        "1": { "name": "entity.name.function.call.chili" }
+      }
+    },
+    "operators": {
+      "patterns": [
+        { "match": "(\\+|-|\\*|/|%)=", "name": "keyword.operator.assignment.compound.chili" },
+        { "match": "==|!=|<=|>=|<(?!<)|>(?!>)", "name": "keyword.operator.comparison.chili" },
+        { "match": "&&|\\|\\||!", "name": "keyword.operator.logical.chili" },
+        { "match": "<<|>>|&|\\||\\^|~", "name": "keyword.operator.bitwise.chili" },
+        { "match": "\\+|-|\\*|/|%", "name": "keyword.operator.arithmetic.chili" },
+        { "match": "=", "name": "keyword.operator.assignment.chili" }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        { "match": ",", "name": "punctuation.separator.comma.chili" },
+        { "match": ";", "name": "punctuation.terminator.statement.chili" }
+      ]
+    },
+    "variables": {
+      "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\b",
+      "name": "variable.other.chili"
+    }
+  }
+}

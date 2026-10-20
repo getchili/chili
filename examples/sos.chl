@@ -1,0 +1,32 @@
+// sos.chl — fait clignoter « SOS » en morse sur la LED intégrée (GPIO 2).
+// Montre comment découper un programme en fonctions.
+
+let led = 2
+let unite = 200 // durée d'un point, en millisecondes
+
+fn signal(duree) {
+    gpio.write(led, 1)
+    delay(duree)
+    gpio.write(led, 0)
+    delay(unite) // silence entre deux signaux
+}
+
+// Envoie n fois le même signal, puis le silence de fin de lettre.
+fn lettre(n, duree) {
+    let i = 0
+    while i < n {
+        signal(duree)
+        i += 1
+    }
+    delay(unite * 2)
+}
+
+fn main() {
+    gpio.mode(led, 1)
+    while true {
+        lettre(3, unite)     // S : . . .
+        lettre(3, unite * 3) // O : - - -
+        lettre(3, unite)     // S : . . .
+        delay(unite * 4)     // pause entre deux SOS
+    }
+}

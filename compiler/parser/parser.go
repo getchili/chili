@@ -1,0 +1,466 @@
+// Package parser construit l'AST Chili par descente récursive.
+//
+// En cas d'erreur, le parser note l'erreur, se resynchronise sur la fin de
+// l'instruction courante et continue, pour signaler plusieurs erreurs d'un coup.
+package parser
+
+import (
+	"fmt"
+	"strconv"
+	"strings"
+
+	"github.com/getchili/chili/compiler/ast"
+	"github.com/getchili/chili/compiler/diag"
+	"github.com/getchili/chili/compiler/lexer"
+	"github.com/getchili/chili/compiler/token"
+)
+
+const maxErrors = 10
+
+type (
+	Error     = diag.Error
+	ErrorList = diag.ErrorList
+)
+
+// bailout est levé (panic) pour abandonner l'instruction en cours.
+type bailout struct{}
+
+type Parser struct {
+	lx   *lexer.Lexer
+	tok  token.Token
+	errs ErrorList
+}
+
+// Parse analyse un fichier source complet. err est une ErrorList si non nil.
+func Parse(src []byte) (prog *ast.Program, err error) {
+	p := &Parser{lx: lexer.New(src)}
+	p.next()
+	prog = p.parseProgram()
+	if len(p.errs) > 0 {
+		return prog, p.errs
+	}
+	return prog, nil
+}
+
+// ParseExpr analyse une expression seule (utile pour les tests).
+func ParseExpr(src string) (ast.Expr, error) {
+	p := &Parser{lx: lexer.New([]byte(src))}
+	p.next()
+	var e ast.Expr
+	func() {
+		defer p.recoverBailout()
+		e = p.parseExpr()
+		if p.tok.Kind == token.SEMICOLON && p.tok.Lit == "\n" {
+			p.next()
+		}
+		if p.tok.Kind != token.EOF {
+			p.errorf(p.tok.Pos, "fin d'expression attendue, trouvé %s", describe(p.tok))
+		}
+	}()
+	if len(p.errs) > 0 {
+		return e, p.errs
+	}
+	return e, nil
+}
+
+// ---------------------------------------------------------------------------
+// Utilitaires
+
+func (p *Parser) next() {
+	p.tok = p.lx.Next()
+	// Les erreurs lexicales sont signalées ici et le token est ignoré.
+	for p.tok.Kind == token.ILLEGAL {
+		p.addError(p.tok.Pos, p.tok.Lit)
+		p.tok = p.lx.Next()
+	}
+}
+
+func (p *Parser) addError(pos token.Pos, msg string) {
+	if len(p.errs) >= maxErrors {
+		return
+	}
+	// Une seule erreur par ligne : les suivantes sont presque toujours en cascade.
+	if n := len(p.errs); n > 0 && p.errs[n-1].Pos.Line == pos.Line {
+		return
+	}
+	p.errs = append(p.errs, Error{Pos: pos, Msg: msg})
+}
+
+// errorf enregistre une erreur et abandonne l'instruction courante.
+func (p *Parser) errorf(pos token.Pos, format string, args ...any) {
+	p.addError(pos, fmt.Sprintf(format, args...))
+	panic(bailout{})
+}
+
+func (p *Parser) recoverBailout() {
+	if r := recover(); r != nil {
+		if _, ok := r.(bailout); !ok {
+			panic(r)
+		}
+	}
+}
+
+func (p *Parser) expect(k token.Kind) token.Token {
+	t := p.tok
+	if t.Kind != k {
+		p.errorf(t.Pos, "%s attendu, trouvé %s", quote(k), describe(t))
+	}
+	p.next()
+	return t
+}
+
+func (p *Parser) ident() *ast.Ident {
+	t := p.expect(token.IDENT)
+	return &ast.Ident{NamePos: t.Pos, Name: t.Lit}
+}
+
+// sync saute les tokens jusqu'à la fin de l'instruction : un ';' (consommé)
+// ou un '}' / EOF (non consommés). Les blocs imbriqués sont sautés en entier.
+func (p *Parser) sync() {
+	depth := 0
+	for {
+		switch p.tok.Kind {
+		case token.EOF:
+			return
+		case token.LBRACE:
+			depth++
+		case token.RBRACE:
+			if depth == 0 {
+				return
+			}
+			depth--
+		case token.SEMICOLON:
+			if depth == 0 {
+				p.next()
+				return
+			}
+		}
+		p.next()
+	}
+}
+
+func describe(t token.Token) string {
+	switch t.Kind {
+	case token.EOF:
+		return "fin de fichier"
+	case token.SEMICOLON:
+		if t.Lit == "\n" {
+			return "fin de ligne"
+		}
+	case token.IDENT:
+		return "identifiant '" + t.Lit + "'"
+	case token.INT:
+		return "nombre " + t.Lit
+	}
+	return quote(t.Kind)
+}
+
+func quote(k token.Kind) string {
+	switch k {
+	case token.IDENT:
+		return "identifiant"
+	case token.INT:
+		return "nombre"
+	}
+	return "'" + k.String() + "'"
+}
+
+// ---------------------------------------------------------------------------
+// Programme
+
+func (p *Parser) parseProgram() *ast.Program {
+	prog := &ast.Program{}
+	for p.tok.Kind != token.EOF {
+		if p.tok.Kind == token.SEMICOLON {
+			p.next()
+			continue
+		}
+		if d, ok := p.parseTopDecl(); ok {
+			prog.Decls = append(prog.Decls, d)
+		} else {
+			p.sync()
+			// Un '}' orphelin au niveau global : on le saute pour avancer.
+			if p.tok.Kind == token.RBRACE {
+				p.next()
+			}
+		}
+	}
+	return prog
+}
+
+func (p *Parser) parseTopDecl() (d ast.Decl, ok bool) {
+	defer p.recoverBailout()
+	switch p.tok.Kind {
+	case token.FN:
+		d = p.parseFnDecl()
+	case token.LET:
+		d = p.parseLet()
+	default:
+		p.errorf(p.tok.Pos, "'fn' ou 'let' attendu au niveau global, trouvé %s", describe(p.tok))
+	}
+	p.endStmt()
+	return d, true
+}
+
+// endStmt exige la fin d'une instruction : ';', '}' (non consommé) ou EOF.
+func (p *Parser) endStmt() {
+	switch p.tok.Kind {
+	case token.SEMICOLON:
+		p.next()
+	case token.RBRACE, token.EOF:
+	default:
+		p.errorf(p.tok.Pos, "fin d'instruction attendue, trouvé %s", describe(p.tok))
+	}
+}
+
+func (p *Parser) parseFnDecl() *ast.FnDecl {
+	fnTok := p.expect(token.FN)
+	d := &ast.FnDecl{FnPos: fnTok.Pos, Name: p.ident()}
+	p.expect(token.LPAREN)
+	if p.tok.Kind != token.RPAREN {
+		d.Params = append(d.Params, p.ident())
+		for p.tok.Kind == token.COMMA {
+			p.next()
+			d.Params = append(d.Params, p.ident())
+		}
+	}
+	p.expect(token.RPAREN)
+	d.Body = p.parseBlock()
+	return d
+}
+
+// ---------------------------------------------------------------------------
+// Instructions
+
+func (p *Parser) parseBlock() *ast.Block {
+	lb := p.expect(token.LBRACE)
+	b := &ast.Block{LBrace: lb.Pos}
+	for p.tok.Kind != token.RBRACE && p.tok.Kind != token.EOF {
+		if p.tok.Kind == token.SEMICOLON {
+			p.next()
+			continue
+		}
+		if s, ok := p.parseStmtRecover(); ok {
+			b.Stmts = append(b.Stmts, s)
+		} else {
+			p.sync()
+		}
+	}
+	p.expect(token.RBRACE)
+	return b
+}
+
+func (p *Parser) parseStmtRecover() (s ast.Stmt, ok bool) {
+	defer p.recoverBailout()
+	s = p.parseStmt()
+	p.endStmt()
+	return s, true
+}
+
+func (p *Parser) parseStmt() ast.Stmt {
+	switch p.tok.Kind {
+	case token.LET:
+		return p.parseLet()
+	case token.IF:
+		return p.parseIf()
+	case token.WHILE:
+		t := p.tok
+		p.next()
+		cond := p.parseExpr()
+		return &ast.WhileStmt{WhilePos: t.Pos, Cond: cond, Body: p.parseBlock()}
+	case token.RETURN:
+		t := p.tok
+		p.next()
+		s := &ast.ReturnStmt{ReturnPos: t.Pos}
+		if p.tok.Kind != token.SEMICOLON && p.tok.Kind != token.RBRACE && p.tok.Kind != token.EOF {
+			s.Value = p.parseExpr()
+		}
+		return s
+	case token.BREAK, token.CONTINUE:
+		t := p.tok
+		p.next()
+		return &ast.BranchStmt{TokPos: t.Pos, Tok: t.Kind}
+	case token.LBRACE:
+		return p.parseBlock()
+	case token.FN:
+		p.errorf(p.tok.Pos, "les fonctions ne peuvent être déclarées qu'au niveau global")
+	}
+	return p.parseSimpleStmt()
+}
+
+func (p *Parser) parseLet() *ast.LetStmt {
+	t := p.expect(token.LET)
+	name := p.ident()
+	p.expect(token.ASSIGN)
+	return &ast.LetStmt{LetPos: t.Pos, Name: name, Value: p.parseExpr()}
+}
+
+func (p *Parser) parseIf() *ast.IfStmt {
+	t := p.expect(token.IF)
+	s := &ast.IfStmt{IfPos: t.Pos, Cond: p.parseExpr(), Then: p.parseBlock()}
+	if p.tok.Kind == token.ELSE {
+		p.next()
+		if p.tok.Kind == token.IF {
+			s.Else = p.parseIf()
+		} else {
+			s.Else = p.parseBlock()
+		}
+	}
+	return s
+}
+
+func isAssignOp(k token.Kind) bool {
+	switch k {
+	case token.ASSIGN, token.ADD_ASSIGN, token.SUB_ASSIGN,
+		token.MUL_ASSIGN, token.DIV_ASSIGN, token.MOD_ASSIGN:
+		return true
+	}
+	return false
+}
+
+func (p *Parser) parseSimpleStmt() ast.Stmt {
+	x := p.parseExpr()
+	if isAssignOp(p.tok.Kind) {
+		op := p.tok
+		target, ok := x.(*ast.Ident)
+		if !ok {
+			p.errorf(op.Pos, "on ne peut affecter qu'une variable")
+		}
+		p.next()
+		return &ast.AssignStmt{Target: target, Op: op.Kind, Value: p.parseExpr()}
+	}
+	if _, ok := x.(*ast.CallExpr); !ok {
+		p.errorf(x.Pos(), "expression inutilisée : seul un appel de fonction peut servir d'instruction")
+	}
+	return &ast.ExprStmt{X: x}
+}
+
+// ---------------------------------------------------------------------------
+// Expressions
+
+// Précédences des opérateurs binaires (cf. docs/spec.md §4).
+var binaryPrec = map[token.Kind]int{
+	token.OROR:    1,
+	token.ANDAND:  2,
+	token.EQ:      3,
+	token.NE:      3,
+	token.LT:      4,
+	token.LE:      4,
+	token.GT:      4,
+	token.GE:      4,
+	token.PIPE:    5,
+	token.CARET:   6,
+	token.AMP:     7,
+	token.SHL:     8,
+	token.SHR:     8,
+	token.PLUS:    9,
+	token.MINUS:   9,
+	token.STAR:    10,
+	token.SLASH:   10,
+	token.PERCENT: 10,
+}
+
+func (p *Parser) parseExpr() ast.Expr { return p.parseBinary(1) }
+
+// parseBinary : montée de précédence, tous les opérateurs binaires sont
+// associatifs à gauche.
+func (p *Parser) parseBinary(minPrec int) ast.Expr {
+	x := p.parseUnary()
+	for {
+		prec, ok := binaryPrec[p.tok.Kind]
+		if !ok || prec < minPrec {
+			return x
+		}
+		op := p.tok
+		p.next()
+		y := p.parseBinary(prec + 1)
+		x = &ast.BinaryExpr{X: x, OpPos: op.Pos, Op: op.Kind, Y: y}
+	}
+}
+
+func (p *Parser) parseUnary() ast.Expr {
+	switch p.tok.Kind {
+	case token.MINUS, token.BANG, token.TILDE:
+		op := p.tok
+		p.next()
+		return &ast.UnaryExpr{OpPos: op.Pos, Op: op.Kind, X: p.parseUnary()}
+	}
+	return p.parsePostfix()
+}
+
+func (p *Parser) parsePostfix() ast.Expr {
+	x := p.parsePrimary()
+	if p.tok.Kind != token.LPAREN {
+		return x
+	}
+	switch x.(type) {
+	case *ast.Ident, *ast.QualifiedName:
+	default:
+		p.errorf(p.tok.Pos, "seule une fonction nommée peut être appelée")
+	}
+	lp := p.expect(token.LPAREN)
+	call := &ast.CallExpr{Fn: x, LParen: lp.Pos}
+	if p.tok.Kind != token.RPAREN {
+		call.Args = append(call.Args, p.parseExpr())
+		for p.tok.Kind == token.COMMA {
+			p.next()
+			call.Args = append(call.Args, p.parseExpr())
+		}
+	}
+	p.expect(token.RPAREN)
+	if p.tok.Kind == token.LPAREN {
+		p.errorf(p.tok.Pos, "seule une fonction nommée peut être appelée")
+	}
+	return call
+}
+
+func (p *Parser) parsePrimary() ast.Expr {
+	t := p.tok
+	switch t.Kind {
+	case token.INT:
+		p.next()
+		v, err := parseInt(t.Lit)
+		if err != nil {
+			p.errorf(t.Pos, "%v", err)
+		}
+		return &ast.IntLit{LitPos: t.Pos, Raw: t.Lit, Value: v}
+	case token.TRUE, token.FALSE:
+		p.next()
+		return &ast.BoolLit{LitPos: t.Pos, Value: t.Kind == token.TRUE}
+	case token.IDENT:
+		id := p.ident()
+		if p.tok.Kind == token.DOT {
+			p.next()
+			return &ast.QualifiedName{Module: id, Name: p.ident()}
+		}
+		return id
+	case token.LPAREN:
+		p.next()
+		x := p.parseExpr()
+		p.expect(token.RPAREN)
+		return x
+	}
+	p.errorf(t.Pos, "expression attendue, trouvé %s", describe(t))
+	return nil
+}
+
+// parseInt convertit un littéral (décimal, 0x, 0b, avec '_') en int32.
+// Les valeurs jusqu'à 0xFFFFFFFF sont acceptées et repliées modulo 2³²,
+// pour pouvoir écrire des masques comme 0xFFFF0000.
+func parseInt(lit string) (int32, error) {
+	s := strings.ReplaceAll(lit, "_", "")
+	base := 10
+	if len(s) > 2 && s[0] == '0' {
+		switch s[1] {
+		case 'x', 'X':
+			base, s = 16, s[2:]
+		case 'b', 'B':
+			base, s = 2, s[2:]
+		}
+	}
+	v, err := strconv.ParseUint(s, base, 32)
+	if err != nil {
+		return 0, fmt.Errorf("entier hors limites (32 bits) : %s", lit)
+	}
+	return int32(uint32(v)), nil
+}

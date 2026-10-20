@@ -1,0 +1,23 @@
+// compteur.chl — compte les appuis sur le bouton BOOT (GPIO 0)
+// et affiche le total à chaque appui.
+// Regarde la sortie avec : chili monitor
+
+let bouton = 0
+
+fn main() {
+    gpio.mode(bouton, 2) // entrée avec pull-up : 1 = relâché, 0 = appuyé
+
+    let appuis = 0
+    let avant = 1 // état précédent du bouton
+
+    while true {
+        // Un appui = passage de 1 (relâché) à 0 (appuyé).
+        let etat = gpio.read(bouton)
+        if avant == 1 && etat == 0 {
+            appuis += 1
+            print(appuis)
+        }
+        avant = etat
+        delay(20) // évite de compter les rebonds du bouton
+    }
+}

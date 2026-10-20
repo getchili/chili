@@ -1,0 +1,145 @@
+{
+  "editor.tokenColorCustomizations": {
+    "textMateRules": [
+      {
+        "name": "Chili · if/else/while (rouge piment)",
+        "scope": "keyword.control.conditional.chili",
+        "settings": {
+          "foreground": "#FF4D4D",
+          "fontStyle": "bold"
+        }
+      },
+      {
+        "name": "Chili · return/break/continue (paprika)",
+        "scope": "keyword.control.flow.chili",
+        "settings": {
+          "foreground": "#FF7A59",
+          "fontStyle": "bold italic"
+        }
+      },
+      {
+        "name": "Chili · fn (habanero)",
+        "scope": "storage.type.function.chili",
+        "settings": {
+          "foreground": "#FF9F1C",
+          "fontStyle": "bold"
+        }
+      },
+      {
+        "name": "Chili · let (mangue)",
+        "scope": "storage.type.chili",
+        "settings": {
+          "foreground": "#FFB86B",
+          "fontStyle": "italic"
+        }
+      },
+      {
+        "name": "Chili · nom de fonction déclarée (piment jaune)",
+        "scope": "entity.name.function.chili",
+        "settings": {
+          "foreground": "#FFD23F",
+          "fontStyle": "bold underline"
+        }
+      },
+      {
+        "name": "Chili · appel de fonction",
+        "scope": "entity.name.function.call.chili",
+        "settings": {
+          "foreground": "#FFE08A"
+        }
+      },
+      {
+        "name": "Chili · module natif gpio (poivron vert)",
+        "scope": "entity.name.namespace.chili",
+        "settings": {
+          "foreground": "#5FD068",
+          "fontStyle": "bold"
+        }
+      },
+      {
+        "name": "Chili · fonction native gpio.xxx",
+        "scope": "support.function.chili",
+        "settings": {
+          "foreground": "#A8E6A1"
+        }
+      },
+      {
+        "name": "Chili · natives print/delay/millis (jalapeño)",
+        "scope": "support.function.builtin.chili",
+        "settings": {
+          "foreground": "#5FD068",
+          "fontStyle": "italic"
+        }
+      },
+      {
+        "name": "Chili · point de gpio.write",
+        "scope": "punctuation.accessor.chili",
+        "settings": {
+          "foreground": "#5FD068"
+        }
+      },
+      {
+        "name": "Chili · nombres (fruit du dragon)",
+        "scope": "constant.numeric.decimal.chili",
+        "settings": {
+          "foreground": "#F15BB5"
+        }
+      },
+      {
+        "name": "Chili · nombres hex/binaires",
+        "scope": [
+          "constant.numeric.hex.chili",
+          "constant.numeric.binary.chili"
+        ],
+        "settings": {
+          "foreground": "#F15BB5",
+          "fontStyle": "italic"
+        }
+      },
+      {
+        "name": "Chili · true/false (aubergine)",
+        "scope": "constant.language.boolean.chili",
+        "settings": {
+          "foreground": "#C77DFF",
+          "fontStyle": "bold"
+        }
+      },
+      {
+        "name": "Chili · opérateurs (braise)",
+        "scope": "source.chili keyword.operator",
+        "settings": {
+          "foreground": "#FF8C69"
+        }
+      },
+      {
+        "name": "Chili · commentaires (sauge fumée)",
+        "scope": "comment.line.double-slash.chili",
+        "settings": {
+          "foreground": "#7F9172",
+          "fontStyle": "italic"
+        }
+      },
+      {
+        "name": "Chili · ponctuation",
+        "scope": [
+          "punctuation.separator.comma.chili",
+          "punctuation.terminator.statement.chili"
+        ],
+        "settings": {
+          "foreground": "#A0857A"
+        }
+      },
+      {
+        "name": "Chili · variables (crème de maïs)",
+        "scope": "variable.other.chili",
+        "settings": {
+          "foreground": "#F4E9DC"
+        }
+      }
+    ]
+  },
+  "material-icon-theme.files.associations": {
+    "*.chl": "../../chili.chili-lang-0.1.0/icons/chili",
+    "*.chlb": "../../chili.chili-lang-0.1.0/icons/chili-bytecode"
+  }
+}

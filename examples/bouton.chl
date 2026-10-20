@@ -1,0 +1,22 @@
+// bouton.chl — allume la LED intégrée (GPIO 2) tant qu'on appuie sur
+// le bouton BOOT de la carte (GPIO 0).
+//
+// Le bouton relie la broche à la masse : relâché, la broche lit 1
+// (grâce au pull-up interne), appuyé, elle lit 0.
+
+let bouton = 0
+let led = 2
+
+fn main() {
+    gpio.mode(bouton, 2) // entrée avec pull-up
+    gpio.mode(led, 1)    // sortie
+
+    while true {
+        if gpio.read(bouton) == 0 {
+            gpio.write(led, 1)
+        } else {
+            gpio.write(led, 0)
+        }
+        delay(10) // 100 lectures par seconde suffisent
+    }
+}

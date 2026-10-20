@@ -1,0 +1,11 @@
+{
+  "name": "chili-vm",
+  "version": "0.1.0",
+  "description": "Machine virtuelle du langage Chili",
+  "frameworks": "*",
+  "platforms": "*",
+  "build": {
+    "srcDir": "src",
+    "includeDir": "src"
+  }
+}

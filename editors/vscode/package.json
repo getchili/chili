@@ -1,0 +1,53 @@
+{
+  "name": "chili-lang",
+  "displayName": "Chili",
+  "description": "Coloration syntaxique et icône pour le langage Chili (.chl)",
+  "version": "0.1.0",
+  "publisher": "chili",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "chili",
+        "aliases": [
+          "Chili",
+          "chili"
+        ],
+        "extensions": [
+          ".chl"
+        ],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./icons/chili.svg",
+          "dark": "./icons/chili.svg"
+        }
+      },
+      {
+        "id": "chili-bytecode",
+        "aliases": [
+          "Chili bytecode"
+        ],
+        "extensions": [
+          ".chlb"
+        ],
+        "icon": {
+          "light": "./icons/chili-bytecode.svg",
+          "dark": "./icons/chili-bytecode.svg"
+        }
+      }
+    ],
+    "grammars": [
+      {
+        "language": "chili",
+        "scopeName": "source.chili",
+        "path": "./syntaxes/chili.tmLanguage.json"
+      }
+    ]
+  }
+}
