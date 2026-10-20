@@ -1,9 +1,12 @@
-// motifs.chl — les classes en action : plusieurs façons de faire clignoter
-// la LED intégrée (GPIO 2), choisies au hasard à chaque tour.
+// motifs.chl — héritage et classes abstraites : plusieurs façons de faire
+// clignoter la LED, choisies au hasard à chaque tour.
 //
-// - Led : une classe simple, avec un champ et des méthodes ;
+// Montre : abstract class, abstract function, extends, constructeur hérité,
+// liaison dynamique (this.jouer() choisit la version de la vraie classe).
+// - Led : une classe simple, avec un champ et des méthodes (voir classes.chl) ;
 // - Motif : une classe abstraite, qui impose la méthode jouer() ;
 // - Clignote, Battement, Morse : des classes filles qui la définissent.
+// Matériel : la LED intégrée (GPIO 2).
 
 class Led {
     let broche

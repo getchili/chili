@@ -1,0 +1,42 @@
+// classes.chl — regrouper des données et des fonctions dans une classe.
+//
+// Montre : class, champs (let), constructor, méthodes, this, new,
+// plusieurs objets de la même classe, chacun avec ses propres champs.
+// Pour l'héritage et les classes abstraites, voir motifs.chl.
+// Matériel : la LED intégrée (GPIO 2), et une 2e LED sur GPIO 4 si tu en as une.
+
+class Led {
+    let broche
+    let allumages = 0               // champ avec une valeur de départ
+
+    constructor(b) {                // appelé par new Led(…)
+        this.broche = b
+        gpio.mode(b, 1)
+    }
+
+    function flash(duree) {
+        gpio.write(this.broche, 1)
+        delay(duree)
+        gpio.write(this.broche, 0)
+        this.allumages += 1
+    }
+
+    // Les champs sont privés : de l'extérieur, on les lit par une méthode.
+    function total() {
+        return this.allumages
+    }
+}
+
+class Main {
+    function main() {
+        let bleue = new Led(2)
+        let rouge = new Led(4)      // un 2e objet, indépendant du premier
+        while true {
+            bleue.flash(100)
+            delay(200)
+            rouge.flash(400)
+            delay(200)
+            print("bleue : " + bleue.total() + ", rouge : " + rouge.total())
+        }
+    }
+}

@@ -1,6 +1,8 @@
-// compteur.chl — compte les appuis sur le bouton BOOT (GPIO 0)
-// et affiche le total à chaque appui.
-// Regarde la sortie avec : chili monitor
+// compteur.chl — compte les appuis sur le bouton BOOT et affiche le total.
+//
+// Montre : détecter un appui (passage de relâché à appuyé) en gardant
+// l'état précédent, éviter les rebonds, print.
+// Matériel : le bouton BOOT (GPIO 0). Regarde la console (chili monitor).
 
 let bouton = 0
 
@@ -12,11 +14,10 @@ class Main {
         let avant = 1 // état précédent du bouton
 
         while true {
-            // Un appui = passage de 1 (relâché) à 0 (appuyé).
             let etat = gpio.read(bouton)
-            if avant == 1 && etat == 0 {
+            if avant == 1 && etat == 0 { // un appui = passage de 1 à 0
                 appuis += 1
-                print(appuis)
+                print("appuis : " + appuis)
             }
             avant = etat
             delay(20) // évite de compter les rebonds du bouton

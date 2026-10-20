@@ -99,18 +99,18 @@ function Main.main  ; params=1 locals=1 max_stack=2
 Exécute le programme sur le PC. Les broches sont simulées : leur état s'affiche. Pratique pour tester la logique sans carte. **Ctrl+C** pour arrêter.
 
 ```powershell
-chili run fib.chl
+chili run fonctions.chl
 ```
 
 ```
+49
+15
+Bonjour Chili
+42
 0
 1
-1
-2
-3
 ...
-75025
-60
+fib(20) = 6765 en 7 ms
 ```
 
 Avec des broches :

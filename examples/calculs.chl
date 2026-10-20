@@ -1,0 +1,39 @@
+// calculs.chl — variables, nombres et opérateurs.
+//
+// Montre : let (globales et locales), +=, nombres en hexadécimal et en binaire,
+// division entière, reste, opérateurs de bits, débordement des entiers 32 bits.
+// Sur le PC : chili run calculs.chl
+
+let prix = 12      // variable globale : visible dans tout le programme
+let quantite = 3
+
+class Main {
+    function main() {
+        let total = prix * quantite         // variable locale à main
+        print("total : " + total)           // 36
+
+        total += 4                          // total = total + 4
+        print("avec la livraison : " + total)   // 40
+
+        // Division entière et reste
+        print("7 / 2 = " + 7 / 2)           // 3 : on tronque
+        print("7 % 2 = " + 7 % 2)           // 1 : le reste
+        print("-7 / 2 = " + -7 / 2)         // -3
+
+        // Autres écritures des nombres
+        print(0xFF)                         // 255 (hexadécimal)
+        print(0b1010)                       // 10 (binaire)
+        print(1_000_000)                    // 1000000 (_ sépare les chiffres)
+
+        // Opérateurs de bits : pratiques pour les masques et les registres
+        print(0b1100 & 0b1010)              // 8  : ET
+        print(0b1100 | 0b1010)              // 14 : OU
+        print(0b1100 ^ 0b1010)              // 6  : OU exclusif
+        print(1 << 4)                       // 16 : décalage à gauche
+        print(-16 >> 2)                     // -4 : décalage à droite (garde le signe)
+
+        // Débordement : les entiers font 32 bits et « font le tour »
+        let max = 2147483647
+        print(max + 1)                      // -2147483648
+    }
+}

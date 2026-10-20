@@ -1,0 +1,57 @@
+// tableaux.chl — ranger plusieurs valeurs dans un tableau.
+//
+// Montre : [a, b, c], array(n), t[i], len, for, tableaux de tableaux,
+// et un tableau partagé entre deux variables.
+// Sur le PC : chili run tableaux.chl  (firmware 0.3.0 sur la carte)
+
+let mesures = [18, 21, 19, 25, 23]
+
+function maximum(t) {
+    let m = t[0]
+    for v in t {
+        if v > m {
+            m = v
+        }
+    }
+    return m
+}
+
+class Main {
+    function main() {
+        print(len(mesures))                 // 5
+        print(mesures[0])                   // 18 : la première case
+        print(mesures[len(mesures) - 1])    // 23 : la dernière
+
+        let somme = 0
+        for v in mesures {
+            somme += v
+        }
+        print("moyenne : " + somme / len(mesures))  // 21
+        print("maximum : " + maximum(mesures))      // 25
+
+        // array(n) : n cases à 0, qu'on remplit ensuite
+        let carres = array(6)
+        for i in 0..len(carres) {
+            carres[i] = i * i
+        }
+        print(carres[5])                    // 25
+
+        // Un tableau de tableaux : une grille de 2 lignes et 3 colonnes
+        let grille = [
+            [1, 2, 3],
+            [4, 5, 6]
+        ]
+        print(grille[1][2])                 // 6 : ligne 1, colonne 2
+        grille[0][0] += 10
+        print(grille[0][0])                 // 11
+
+        // Une case peut contenir n'importe quoi
+        let fiche = ["Ada", 36, [1, 2]]
+        print(fiche[0] + " a " + fiche[1] + " ans")
+
+        // Attention : deux variables peuvent désigner le même tableau
+        let autre = mesures
+        autre[0] = 0
+        print(mesures[0])                   // 0 : mesures a changé aussi
+    }
+}

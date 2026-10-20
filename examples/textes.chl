@@ -1,0 +1,49 @@
+// textes.chl — manipuler du texte.
+//
+// Montre : "…", + (assembler), len, t[i], == et <, caractères spéciaux,
+// str.sub, str.find, str.char, str.int, for sur les lettres d'un texte.
+// Sur le PC : chili run textes.chl  (firmware 0.3.0 sur la carte)
+
+class Main {
+    function main() {
+        let prenom = "Ada"
+        let message = "Bonjour " + prenom + " !"
+        print(message)                      // Bonjour Ada !
+        print("longueur : " + len(message)) // 13
+
+        // Un nombre collé à un texte devient du texte
+        let t = 21
+        print("il fait " + t + " °C")
+        print("2 + 3 = " + (2 + 3))         // parenthèses : le calcul d'abord
+
+        // t[i] donne le code de la lettre n° i (en partant de 0)
+        print(prenom[0])                    // 65, le code de 'A'
+        print(str.char(prenom[0] + 1))      // B
+
+        // Comparer
+        print(prenom == "Ada")              // 1
+        print("abc" < "abd")                // 1 : ordre alphabétique
+
+        // Caractères spéciaux
+        print("deux\nlignes")
+        print("des \"guillemets\" et un \u{e9}")
+
+        // Fonctions de texte
+        let phrase = "le chili pique"
+        print(str.sub(phrase, 3, 8))        // chili
+        print(str.find(phrase, "pique"))    // 9
+        print(str.find(phrase, "doux"))     // -1 : pas trouvé
+        print(str.int("40") + 2)            // 42
+
+        // Construire un texte lettre par lettre : tout en majuscules
+        let majuscules = ""
+        for c in phrase {
+            if c >= 97 && c <= 122 {        // de 'a' à 'z'
+                majuscules = majuscules + str.char(c - 32)
+            } else {
+                majuscules = majuscules + str.char(c)
+            }
+        }
+        print(majuscules)                   // LE CHILI PIQUE
+    }
+}

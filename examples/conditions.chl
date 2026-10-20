@@ -1,0 +1,57 @@
+// conditions.chl — prendre des décisions avec if / else.
+//
+// Montre : if, else if, else, comparaisons (== != < <= > >=),
+// logique (&& || !), et la règle « 0 est faux, le reste est vrai ».
+// Sur le PC : chili run conditions.chl
+
+function categorie(temperature) {
+    if temperature < 0 {
+        return "gel"
+    } else if temperature < 15 {
+        return "froid"
+    } else if temperature < 25 {
+        return "doux"
+    } else {
+        return "chaud"
+    }
+}
+
+class Main {
+    function main() {
+        print(categorie(-3))                // gel
+        print(categorie(20))                // doux
+        print(categorie(31))                // chaud
+
+        let t = 28
+        let humide = true
+
+        // && : les deux sont vraies ; || : au moins une ; ! : le contraire
+        if t > 25 && humide {
+            print("lourd")                  // affiché
+        }
+        if t < 0 || t > 35 {
+            print("extrême")                // pas affiché
+        }
+        if !humide {
+            print("sec")                    // pas affiché
+        }
+
+        // Une comparaison vaut 1 (vrai) ou 0 (faux)
+        print(3 > 2)                        // 1
+        print(3 == 2)                       // 0
+
+        // 0 est faux, tout autre nombre est vrai
+        let alarmes = 0
+        if alarmes {
+            print("alarme !")               // pas affiché
+        } else {
+            print("tout va bien")           // affiché
+        }
+
+        // && s'arrête dès que le résultat est connu : ici, pas de division par zéro
+        let diviseur = 0
+        if diviseur != 0 && 10 / diviseur > 2 {
+            print("jamais affiché")
+        }
+    }
+}

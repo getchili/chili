@@ -1,7 +1,7 @@
-// morse.chl — fait clignoter un message en morse sur la LED de la carte
+// morse.chl — fait clignoter un message en morse sur la LED de la carte.
 //
-// Montre les chaînes, les tableaux et la boucle for.
-// Firmware 0.3.0 ou plus récent.
+// Montre : texte, tableaux et boucles for réunis dans un vrai programme.
+// Matériel : la LED intégrée (GPIO 2). Firmware 0.3.0 ou plus récent.
 
 let led = 2
 let message = "SOS CHILI"

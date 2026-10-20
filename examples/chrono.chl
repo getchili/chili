@@ -1,0 +1,36 @@
+// chrono.chl — faire plusieurs choses à des rythmes différents, sans bloquer.
+//
+// Montre : millis() au lieu de delay() pour cadencer des actions,
+// et la comparaison par différence (millis() - prochain >= 0), qui reste
+// juste même quand le compteur dépasse la limite des entiers (au bout de 24 jours).
+// Matériel : la LED intégrée (GPIO 2). La console affiche les secondes.
+
+let led = 2
+
+class Main {
+    function main() {
+        gpio.mode(led, 1)
+        let allumee = 0
+        let secondes = 0
+        let prochainClignotement = millis()
+        let prochaineSeconde = millis() + 1000
+
+        while true {
+            // Toutes les 250 ms : la LED change d'état
+            if millis() - prochainClignotement >= 0 {
+                allumee = 1 - allumee
+                gpio.write(led, allumee)
+                prochainClignotement += 250
+            }
+
+            // Toutes les secondes : on affiche le temps écoulé
+            if millis() - prochaineSeconde >= 0 {
+                secondes += 1
+                print(secondes + " s")
+                prochaineSeconde += 1000
+            }
+
+            delay(5) // courte pause : la boucle n'a pas besoin de tourner plus vite
+        }
+    }
+}

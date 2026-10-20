@@ -125,15 +125,37 @@ La LED clignote plus vite. C'est tout : pas de recompilation du firmware, l'envo
 
 ## Les autres exemples
 
-| Fichier        | Ce qu'il fait                                                     |
-|----------------|-------------------------------------------------------------------|
-| `blink.chl`    | fait clignoter la LED (GPIO 2)                                    |
-| `bouton.chl`   | allume la LED tant qu'on appuie sur le bouton **BOOT** (GPIO 0)   |
-| `compteur.chl` | compte les appuis sur BOOT et affiche le total avec `print`       |
-| `sos.chl`      | « SOS » en morse sur la LED, avec des fonctions                   |
-| `de.chl`       | dé électronique : un appui sur BOOT, la LED clignote de 1 à 6 fois (`random`) |
-| `motifs.chl`   | plusieurs motifs de clignotement tirés au hasard, écrits avec des [classes](classes.md) |
-| `fib.chl`      | calcule la suite de Fibonacci et mesure le temps de calcul        |
+Un exemple par notion. Ceux marqués **PC** se testent sans carte avec `chili run` ; les autres utilisent la LED ou le bouton de la carte.
+
+**La carte**
+
+| Fichier          | Ce qu'il montre                                                                 |
+|------------------|---------------------------------------------------------------------------------|
+| `blink.chl`      | faire clignoter la LED : `gpio.mode`, `gpio.write`, `delay`                     |
+| `bouton.chl`     | lire le bouton **BOOT** : `gpio.read`, entrée avec pull-up                      |
+| `compteur.chl`   | compter les appuis sur BOOT (détecter un appui, éviter les rebonds)             |
+| `chrono.chl`     | faire plusieurs choses à des rythmes différents avec `millis()`                 |
+| `de.chl`         | dé électronique : `random`, à chaque appui la LED clignote de 1 à 6 fois        |
+
+**Le langage**
+
+| Fichier          | Ce qu'il montre                                                                 |
+|------------------|---------------------------------------------------------------------------------|
+| `calculs.chl`    | **PC** — variables, nombres (hexa, binaire), opérateurs, débordement            |
+| `conditions.chl` | **PC** — `if` / `else`, comparaisons, `&&` `\|\|` `!`                             |
+| `boucles.chl`    | **PC** — `while`, `for`, `break`, `continue`                                    |
+| `fonctions.chl`  | **PC** — paramètres, `return`, récursion, mesure du temps                       |
+| `textes.chl`     | **PC** — [texte](textes-tableaux.md) : `+`, `len`, `str.sub`, `str.find`…       |
+| `tableaux.chl`   | **PC** — [tableaux](textes-tableaux.md) : `[…]`, `array`, `len`, grilles        |
+| `classes.chl`    | une [classe](classes.md) `Led` : champs, constructeur, méthodes, objets         |
+| `motifs.chl`     | héritage et classes abstraites : des motifs de clignotement tirés au hasard     |
+
+**Petits projets**
+
+| Fichier          | Ce qu'il fait                                                                   |
+|------------------|---------------------------------------------------------------------------------|
+| `morse.chl`      | un message en morse sur la LED (texte + tableaux + `for`)                       |
+| `password.chl`   | **PC** — génère un mot de passe au hasard (`random`, `printc`)                  |
 
 Essaie par exemple :
 
@@ -141,7 +163,7 @@ Essaie par exemple :
 chili push compteur.chl
 ```
 
-puis appuie plusieurs fois sur le bouton BOOT : `1`, `2`, `3`… s'affichent dans le terminal.
+puis appuie plusieurs fois sur le bouton BOOT : `appuis : 1`, `appuis : 2`… s'affichent dans le terminal.
 
 ---
 

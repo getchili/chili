@@ -1,11 +1,14 @@
-// blink.chl — fait clignoter la LED intégrée de l'ESP32 (GPIO 2)
+// blink.chl — fait clignoter la LED de la carte.
+//
+// Montre : gpio.mode, gpio.write, delay, la boucle infinie while true.
+// Matériel : la LED intégrée (GPIO 2). Essaie de changer period, puis renvoie.
 
 let led_pin = 2
-let period = 500
+let period = 500 // durée allumée, puis éteinte, en millisecondes
 
 class Main {
     function main() {
-        gpio.mode(led_pin, 1)
+        gpio.mode(led_pin, 1) // 1 = sortie
         while true {
             gpio.write(led_pin, 1)
             delay(period)

@@ -199,7 +199,7 @@ class Main {
             let etat = gpio.read(bouton)
             if avant == 1 && etat == 0 {
                 appuis += 1
-                print(appuis)
+                print("appuis : " + appuis)
             }
             avant = etat
             delay(20) // évite de compter les rebonds du bouton

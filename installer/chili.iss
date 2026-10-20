@@ -65,6 +65,11 @@ Name: "addtopath"; Description: "{cm:TaskPath}"
 Name: "associate"; Description: "{cm:TaskAssoc}"
 Name: "vscode"; Description: "{cm:TaskVSCode}"; Check: VSCodeFound
 
+[InstallDelete]
+; Exemples retirés : ne pas les laisser traîner après une mise à jour.
+Type: files; Name: "{app}\examples\sos.chl"
+Type: files; Name: "{app}\examples\fib.chl"
+
 [Files]
 Source: "..\chili.exe"; DestDir: "{app}\bin"; Flags: ignoreversion
 Source: "..\editors\windows\chili.ico"; DestDir: "{app}\icons"; Flags: ignoreversion

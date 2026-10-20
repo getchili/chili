@@ -1,0 +1,47 @@
+// fonctions.chl — découper un programme en fonctions.
+//
+// Montre : function, paramètres, return, appel avant la définition,
+// récursion, mesure d'une durée avec millis().
+// Sur le PC : chili run fonctions.chl
+
+function carre(n) {
+    return n * n
+}
+
+function moyenne(a, b) {
+    return (a + b) / 2
+}
+
+// Une fonction sans return renvoie 0 : on l'appelle pour ce qu'elle fait.
+function salue(nom) {
+    print("Bonjour " + nom)
+}
+
+// Récursion : la fonction s'appelle elle-même (suite de Fibonacci).
+function fib(n) {
+    if n < 2 {
+        return n
+    }
+    return fib(n - 1) + fib(n - 2)
+}
+
+class Main {
+    function main() {
+        print(carre(7))                     // 49
+        print(moyenne(10, 21))              // 15 : division entière
+        salue("Chili")                      // Bonjour Chili
+        print(double(21))                   // 42 : double est écrite plus bas, aucun souci
+
+        for i in 0..10 {
+            print(fib(i))                   // 0 1 1 2 3 5 8 13 21 34
+        }
+
+        let debut = millis()
+        let r = fib(20)
+        print("fib(20) = " + r + " en " + (millis() - debut) + " ms")
+    }
+}
+
+function double(x) {
+    return 2 * x
+}
