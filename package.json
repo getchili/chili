@@ -1,0 +1,19 @@
+{
+  "name": "chili",
+  "private": true,
+  "description": "Chili — langage pour ESP32 (scripts de build et de release)",
+  "scripts": {
+    "build": "powershell -NoProfile -ExecutionPolicy Bypass -File build.ps1 -Installer",
+    "release": "npm run build && node scripts/release.mjs"
+  },
+  "release": {
+    "repo": "getchili/chili",
+    "name": "Chili",
+    "versionFile": "compiler/cmd/chili/main.go",
+    "assets": [
+      "dist/ChiliSetup-{version}.exe",
+      "chili.exe"
+    ],
+    "notes": "## Installation\n\nTélécharge **ChiliSetup-{version}.exe** et lance-le (pas besoin de droits administrateur). Ouvre ensuite un nouveau terminal et tape `chili check-port`.\n\n`chili.exe` seul est aussi fourni pour un usage sans installation.\n\nDocumentation : https://getchili.github.io/docs.html"
+  }
+}
