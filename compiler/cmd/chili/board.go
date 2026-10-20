@@ -150,6 +150,9 @@ func push(path, target string) {
 	start := time.Now()
 	if err := conn.Load(data); err != nil {
 		fmt.Println()
+		if strings.Contains(err.Error(), "non disponible sur cette carte") {
+			die("échec : %v\nLe firmware de la carte est trop ancien pour ce programme. Mets-le à jour avec : chili flash", err)
+		}
 		die("échec : %v", err)
 	}
 	fmt.Printf("ok (%d ms)\n", time.Since(start).Milliseconds())

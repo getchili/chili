@@ -4,6 +4,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"strings"
@@ -181,6 +182,8 @@ func runProgram(prog *bytecode.Program) {
 			fmt.Printf("[gpio] broche %d = %d\n", args[0], args[1])
 		case "gpio.read":
 			return pins[args[0]], nil
+		case "random":
+			return natives.RandomRange(args[0], args[1], rand.Uint32())
 		default:
 			return 0, fmt.Errorf("native %s non simulée", natives.Name(id))
 		}

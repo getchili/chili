@@ -3,6 +3,7 @@ package codegen
 import (
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"strings"
 	"testing"
 
@@ -29,10 +30,13 @@ func run(t *testing.T, src string) (string, error) {
 
 	var out strings.Builder
 	printID, _, _ := natives.Lookup("print")
+	randomID, _, _ := natives.Lookup("random")
 	vm := refvm.New(decoded, func(id int, args []int32) (int32, error) {
-		if id == printID {
+		switch id {
+		case printID:
 			fmt.Fprintln(&out, args[0])
-			return 0, nil
+		case randomID:
+			return natives.RandomRange(args[0], args[1], rand.Uint32())
 		}
 		return 0, nil
 	})
@@ -221,6 +225,26 @@ var programTests = []struct {
 			print(1_000_000)
 			print(0b1010)
 		}`, "127 128 -128 -129 1000000 10"},
+
+	{"random", `fn main() {
+			let i = 0
+			let ok = 1
+			let vu1 = 0
+			let vu6 = 0
+			while i < 2000 {
+				let d = random(1, 6)
+				if d < 1 || d > 6 { ok = 0 }
+				if d == 1 { vu1 = 1 }
+				if d == 6 { vu6 = 1 }
+				i += 1
+			}
+			print(ok)
+			print(vu1 + vu6)
+			print(random(7, 7))
+			print(random(-3, -3))
+			let x = random(0x80000000, 0x7FFFFFFF)
+			print(1)
+		}`, "1 2 7 -3 1"},
 }
 
 func TestPrograms(t *testing.T) {
@@ -247,6 +271,7 @@ func TestRuntimeErrors(t *testing.T) {
 		{"division par zéro", "fn main() { let z = 0\n print(1 / z) }", "division par zéro"},
 		{"modulo par zéro", "fn main() { let z = 0\n print(1 % z) }", "modulo par zéro"},
 		{"récursion infinie", "fn f(n) { return f(n + 1) }\nfn main() { f(0) }", "trop d'appels imbriqués"},
+		{"random à l'envers", "fn main() { print(random(6, 1)) }", "plus petit que le minimum"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

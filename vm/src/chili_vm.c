@@ -63,6 +63,16 @@ uint32_t chili_crc32(const uint8_t *data, size_t size)
     return ~crc;
 }
 
+chili_status chili_random_range(chili_vm *vm, int32_t min, int32_t max, uint32_t r, int32_t *out)
+{
+    if (max < min)
+        return chili_fail(vm, "random : le maximum (%ld) est plus petit que le minimum (%ld)",
+                          (long)max, (long)min);
+    uint64_t span = (uint64_t)((int64_t)max - (int64_t)min) + 1u; /* de 1 à 2^32 */
+    *out = (int32_t)((int64_t)min + (int64_t)(((uint64_t)r * span) >> 32));
+    return CHILI_OK;
+}
+
 chili_status chili_fail(chili_vm *vm, const char *fmt, ...)
 {
     va_list ap;

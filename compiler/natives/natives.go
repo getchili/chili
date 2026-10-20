@@ -6,6 +6,7 @@
 package natives
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 )
@@ -22,6 +23,7 @@ var Table = []Native{
 	{"gpio.mode", 2},
 	{"gpio.write", 2},
 	{"gpio.read", 1},
+	{"random", 2},
 }
 
 // Lookup renvoie l'ID et la description d'une native par son nom complet.
@@ -58,4 +60,14 @@ func Name(id int) string {
 		return "#" + strconv.Itoa(id)
 	}
 	return Table[id].Name
+}
+
+// RandomRange ramène une valeur aléatoire 32 bits r dans [min, max] (bornes
+// incluses), sans biais notable. La VM C applique exactement la même formule.
+func RandomRange(min, max int32, r uint32) (int32, error) {
+	if max < min {
+		return 0, fmt.Errorf("random : le maximum (%d) est plus petit que le minimum (%d)", max, min)
+	}
+	span := uint64(int64(max)-int64(min)) + 1 // de 1 à 2^32
+	return int32(int64(min) + int64((uint64(r)*span)>>32)), nil
 }

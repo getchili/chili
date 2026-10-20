@@ -128,6 +128,13 @@ chili_status chili_fail(chili_vm *vm, const char *fmt, ...);
 /* CRC-32 IEEE (même algorithme que Go hash/crc32.ChecksumIEEE). */
 uint32_t chili_crc32(const uint8_t *data, size_t size);
 
+/*
+ * Pour la native random(min, max) : ramène une valeur aléatoire 32 bits r
+ * dans [min, max], bornes incluses (même formule que natives.RandomRange en Go).
+ * Renvoie CHILI_ERROR (via chili_fail) si max < min.
+ */
+chili_status chili_random_range(chili_vm *vm, int32_t min, int32_t max, uint32_t r, int32_t *out);
+
 #ifdef __cplusplus
 }
 #endif

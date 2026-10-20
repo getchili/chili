@@ -69,7 +69,7 @@
           }
         },
         {
-          "match": "\\b(print|delay|millis)\\b",
+          "match": "\\b(print|delay|millis|random)\\b",
           "name": "support.function.builtin.chili"
         }
       ]

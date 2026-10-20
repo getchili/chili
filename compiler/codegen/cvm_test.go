@@ -86,6 +86,7 @@ func TestCVMRuntimeErrors(t *testing.T) {
 		{"fn main() { let z = 0\n print(1 / z) }", "division par zero"},
 		{"fn main() { let z = 0\n print(1 % z) }", "modulo par zero"},
 		{"fn f(n) { return f(n + 1) }\nfn main() { f(0) }", "trop d'appels imbriques"},
+		{"fn main() { print(random(6, 1)) }", "plus petit que le minimum"},
 	}
 	for _, tt := range tests {
 		_, errOut, ok := runCVM(t, exe, tt.src)

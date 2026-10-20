@@ -83,6 +83,13 @@ static chili_status native_gpio_read(chili_vm *vm, const int32_t *args, int32_t 
     return CHILI_OK;
 }
 
+static chili_status native_random(chili_vm *vm, const int32_t *args, int32_t *ret)
+{
+    /* Deux tirages de rand() (souvent limité à 15 bits) pour couvrir 32 bits. */
+    uint32_t r = ((uint32_t)rand() << 17) ^ ((uint32_t)rand() << 2) ^ (uint32_t)rand();
+    return chili_random_range(vm, args[0], args[1], r, ret);
+}
+
 #define X(id, name, arity, fn) { name, arity, fn },
 static const chili_native natives[] = { CHILI_NATIVES(X) };
 #undef X
@@ -109,6 +116,7 @@ int main(int argc, char **argv)
         return 1;
     }
     start_ms = now_ms();
+    srand((unsigned)time(NULL) ^ (unsigned)start_ms);
 
     chili_status st;
     do {

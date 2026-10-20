@@ -10,6 +10,7 @@ Les fonctions natives sont fournies par la carte. On les appelle comme n'importe
 | `gpio.mode(p, m)`    | broche, mode (0-3) | 0                  | règle une broche en entrée ou en sortie        |
 | `gpio.write(p, v)`   | broche, valeur     | 0                  | met une sortie à 1 (3,3 V) ou à 0 (0 V)        |
 | `gpio.read(p)`       | broche             | 0 ou 1             | lit l'état d'une broche                        |
+| `random(min, max)`   | deux nombres       | un nombre          | tire un nombre au hasard entre `min` et `max`  |
 
 ## `print(v)`
 
@@ -58,6 +59,22 @@ while true {
 ```
 
 Le compteur dépasse la limite des entiers 32 bits au bout d'environ 24 jours et repasse en négatif. Compare toujours avec une **différence** (`millis() - prochain >= 0`) plutôt que `millis() >= prochain` : la différence reste juste même au passage de la limite.
+
+## `random(min, max)`
+
+Renvoie un nombre entier tiré au hasard entre `min` et `max`, **bornes comprises**.
+
+```chili
+let de = random(1, 6)       // comme un dé : 1, 2, 3, 4, 5 ou 6
+let pile = random(0, 1)     // 0 ou 1
+delay(random(200, 800))     // une pause de durée imprévisible
+```
+
+Sur l'ESP32, le hasard vient du **générateur matériel** de la puce : c'est du vrai aléatoire, il n'y a pas de graine à choisir, et chaque démarrage donne une suite différente. Sur le PC (`chili run`), il vient du système.
+
+Si `max` est plus petit que `min`, le programme s'arrête avec une erreur : `random : le maximum (1) est plus petit que le minimum (6)`.
+
+> `random` demande le firmware **0.1.4** ou plus récent. Avec un firmware plus ancien, l'envoi est refusé et Chili propose de le mettre à jour (`chili flash`, ou le bandeau orange de Chili Lab).
 
 ## Broches GPIO
 

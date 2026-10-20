@@ -126,6 +126,12 @@ static chili_status native_gpio_read(chili_vm *vm, const int32_t *args, int32_t 
     return CHILI_OK;
 }
 
+static chili_status native_random(chili_vm *vm, const int32_t *args, int32_t *ret)
+{
+    // Générateur matériel de l'ESP32 : vrai aléatoire, pas de graine à gérer.
+    return chili_random_range(vm, args[0], args[1], esp_random(), ret);
+}
+
 #define X(id, name, arity, fn) {name, arity, fn},
 static const chili_native natives[] = {CHILI_NATIVES(X)};
 #undef X
